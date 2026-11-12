@@ -227,11 +227,11 @@ function snd(f1,f2,d,type='square',vol=.05){
   o.connect(g).connect(ac.destination);o.start(t);o.stop(t+d)}catch(e){}
 }
 
-let state='title',T=0,p,camY,lavaY,spikes,darts,segs,run,chunkY,forceS,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes;
+let state='title',T=0,p,camY,lavaY,spikes,darts,segs,busy,prevG,keep,chunkY,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes;
 const CH=40;
 function reset(){
   p={lane:1,x:-6,y:0,stun:0,inv:0,anim:0,vy:0,prevLane:1,switchT:-9};
-  camY=-20;lavaY=-24;spikes=[];darts=[];segs=[];run=[0,0,0];chunkY=120;forceS=false;bubbles=[];parts=[];pops=[];
+  camY=-20;lavaY=-24;spikes=[];darts=[];segs=[];busy=[0,0,0];prevG=[0,0,0];keep=-1;chunkY=120;bubbles=[];parts=[];pops=[];
   nextY=260;it=0;playT=0;deadT=0;speed=30;shake=0;newBest=false;bonus=0;combo=0;comboT=-9;closes=0;
 }
 reset();
@@ -246,23 +246,29 @@ const curY=()=>state==='dead'?deadY:p.y;
 const height=()=>Math.max(0,Math.floor(curY()/8));
 const score=()=>height()+bonus;
 
-// one row of vine chunks; every chunk keeps at least one usable lane
+// one row of vines: every row keeps at least one fully solid lane.
+// busy[l]: lane is taken by a fragile vine until this height. prevG[l]: last row that put a gap in lane l.
 function genChunk(){
-  const m=chunkY/8,pG=Math.min(.5,.2+m/300),t=[];
-  for(let l=0;l<3;l++){
-    if(run[l]>0){run[l]--;t[l]='F';continue}
-    const r=Math.random(),fr=[0,1,2].filter(k=>k!==l&&(t[k]==='F'||run[k]>0)).length;
-    if(r<pG){t[l]='G';const y0=chunkY+4+Math.random()*10;segs.push({lane:l,type:'G',y0,y1:y0+22})}
-    else if(r<pG+.14&&m>12&&fr<2){t[l]='F';run[l]=2+(Math.random()*2|0);segs.push({lane:l,type:'F',y0:chunkY,y1:chunkY+CH*(run[l]+1),t:-1,broken:false})}
-    else t[l]='S';
+  const y=chunkY,d=Math.min(1,y/3000),sp=Math.min(75,30+y*.02);
+  const open=[0,1,2].filter(l=>busy[l]<=y);
+  let n=Math.random()<.3-.2*d?0:Math.random()<.15+.45*d?2:1;
+  // if the last row left a single safe lane, keep it safe so you never need two instant switches
+  const pick=open.filter(l=>l!==keep).sort(()=>Math.random()-.5).sort((a,b)=>(prevG[a]===y-CH)-(prevG[b]===y-CH));
+  n=Math.min(n,open.length-1,pick.length);
+  const hz=[0,1,2].filter(l=>busy[l]>y).concat(pick.slice(0,n));
+  keep=hz.length===2?[0,1,2].find(l=>!hz.includes(l)):-1;
+  for(let i=0;i<n;i++){
+    const l=pick[i];
+    if(y>150&&busy.every(b=>b<=y)&&Math.random()<.3){
+      // short enough to climb past in under 2s if you stay on it from the start
+      const len=Math.round(sp*(1.4+Math.random()*.4));
+      segs.push({lane:l,type:'F',y0:y,y1:y+len,t:-1,broken:false});busy[l]=y+len+8;
+    } else {
+      const y0=y+6+Math.random()*8;
+      segs.push({lane:l,type:'G',y0,y1:y0+12+Math.random()*8+d*4});prevG[l]=y;
+    }
   }
-  let fOnly=false;
-  if(!t.includes('S')){
-    if(!forceS&&t.includes('F')&&Math.random()<.4)fOnly=true;
-    else{const gl=[0,1,2].filter(l=>t[l]==='G'),l=gl[Math.random()*gl.length|0];
-      segs=segs.filter(s=>!(s.lane===l&&s.type==='G'&&s.y0>=chunkY));t[l]='S'}
-  }
-  forceS=fOnly;chunkY+=CH;
+  chunkY+=CH;
 }
 
 function close(label){
