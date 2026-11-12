@@ -15,7 +15,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 <body>
 <div id="stage">
 <div id="wrap">
-<canvas id="g" width="144" height="256" role="img" aria-label="Dungeon Climb game. Swipe or use arrow keys to switch vines; tap or press space to start."></canvas>
+<canvas id="g" width="288" height="512" role="img" aria-label="Dungeon Climb game. Swipe or use arrow keys to switch vines; tap or press space to start."></canvas>
 <div id="crt"></div>
 </div>
 </div>
@@ -25,17 +25,185 @@ const W=144,H=256,cv=document.getElementById('g'),cx=cv.getContext('2d'),wrap=do
 const P={k:'#000000',n:'#1d2b53',u:'#7e2553',g:'#008751',h:'#ab5236',d:'#5f574f',l:'#c2c3c7',w:'#fff1e8',r:'#ff004d',o:'#ffa300',y:'#ffec27',G:'#00e436',b:'#29adff',v:'#83769c',s:'#ffccaa'};
 const LX=[40,72,104];
 
-const CLIMB=["s.......","s.hhhh..","shhhhhh.","s.sksk..","s.ssss..","bbbbbbb.",".bbbbbbs",".bbbbbbs","..dddd..","..d..d..","..d..d..",".kk..kk."];
-const TOP=["........","..hhhh..",".hhhhhhh","...sssk.","...ssss.","..bbbb..",".sbbbbs.","..bbbb.."];
-const RUN1=TOP.concat(["..dddd..","..d..d..",".d....d.",".k....k."]);
-const RUN2=TOP.concat(["..dddd..","...dd...","...dd...","...kk..."]);
+// explorer: authored at 16x24, upscaled 1.5x (Scale3x then halved) to 24x36 fine px = 12x18 world, auto outline
+const SPC={o:'#291814',H:'#ab5236',h:'#742f29',d:'#5a3a22',s:'#ffccaa',z:'#e0a07a',B:'#29adff',b:'#065ab5',n:'#c9a66b',N:'#8a6a45',p:'#5f574f',P:'#3a3438',w:'#5a3a22'};
+const at=(o,rows)=>{const a=[];rows.forEach((s,i)=>a[o+i]=s);return a};
+function scale3(g){
+  const h=g.length,w=g[0].length,o=[],at=(r,c)=>r<0||r>=h||c<0||c>=w?'.':g[r][c];
+  for(let r=0;r<h*3;r++)o[r]=[];
+  for(let r=0;r<h;r++)for(let c=0;c<w;c++){
+    const A=at(r-1,c-1),B=at(r-1,c),C=at(r-1,c+1),D=at(r,c-1),E=at(r,c),F=at(r,c+1),G=at(r+1,c-1),H=at(r+1,c),I=at(r+1,c+1);
+    const e=[E,E,E,E,E,E,E,E,E];
+    if(B!==H&&D!==F){
+      e[0]=D===B?D:E;e[1]=(D===B&&E!==C)||(B===F&&E!==A)?B:E;e[2]=B===F?F:E;
+      e[3]=(D===B&&E!==G)||(D===H&&E!==A)?D:E;e[5]=(B===F&&E!==I)||(H===F&&E!==C)?F:E;
+      e[6]=D===H?D:E;e[7]=(D===H&&E!==I)||(H===F&&E!==G)?H:E;e[8]=H===F?F:E;
+    }
+    for(let i=0;i<9;i++)o[r*3+(i/3|0)][c*3+i%3]=e[i];
+  }
+  return o.filter((_,r)=>r%2===0).map(row=>row.filter((_,c)=>c%2===0));
+}
+function build(flip,...ls){
+  let g=[];
+  for(let r=0;r<24;r++){g[r]=[];for(let c=0;c<16;c++){let ch='.';
+    for(const L of ls){const k=L[r]&&L[r][flip?15-c:c];if(k&&k!=='.')ch=k}g[r][c]=ch}}
+  g=scale3(g);
+  const h=g.length,w=g[0].length,on=(r,c)=>r>=0&&r<h&&c>=0&&c<w&&g[r][c]!=='.',px=[];
+  for(let r=-1;r<=h;r++)for(let c=-1;c<=w;c++){
+    if(on(r,c))px.push([c+1,r+1,SPC[g[r][c]]]);
+    else if(on(r-1,c)||on(r+1,c)||on(r,c-1)||on(r,c+1))px.push([c+1,r+1,null]);
+  }
+  return px;
+}
+// back view (climbing)
+const BACK=at(4,[
+"......HHHH......",
+".....HHHHHH.....",
+".....hHHHHh.....",
+".....oooooo.....",
+"....hHHHHHHh....",
+".....dddddd.....",
+"....bBBzzBBb....",
+"...bBNNNNNNBb...",
+"...bBnNNNNnBb...",
+"...bBnnnnnnBb...",
+"...bBnnnnnnBb...",
+"...bBnNNNNnBb...",
+"....bNNNNNNb....",
+"....oooooooo...."]);
+const ARM_HI=at(0,[
+".....ss.........",
+".....ss.........",
+"....zs..........",
+"....zs..........",
+"...zs...........",
+"...zs......ss...",
+"..bB.......ss...",
+"..bB........sz..",
+"..bB........sz..",
+"..bB........Bb..",
+"..bB........Bb.."]);
+const ARM_MID=at(2,[
+"....ss....ss....",
+"....ss....ss....",
+"....zs....sz....",
+"...zs......sz...",
+"..zs........sz..",
+"..bB........Bb..",
+"..bB........Bb..",
+"..bB........Bb..",
+"..bB........Bb.."]);
+const ARM_HIT=at(10,[
+"sszbB......Bbzss",
+"zz..b......b..zz"]);
+const ARM_UP=at(1,[
+"s..............s",
+"ss............ss",
+".z............z.",
+".zs..........sz.",
+"..z..........z..",
+"..Bb........bB..",
+"..BB........BB..",
+"..bB........Bb..",
+"..bB........Bb..",
+"...B........B..."]);
+const LEG_KNEE=at(18,[
+"....ppP..Pppp...",
+"....ppP..Pppp...",
+"....ppP...www...",
+"....ppP...www...",
+"....www.........",
+"...wwww........."]);
+const LEG_MID=at(18,[
+"....ppP..Ppp....",
+"....ppP..Ppp....",
+"....ppP..Ppp....",
+"....www..www....",
+"....www..www...."]);
+const LEG_HANG=at(18,[
+"....ppP..Ppp....",
+"....ppP..Ppp....",
+"....ppP..Ppp....",
+"....ppP..Ppp....",
+"....www..www....",
+"....www..www...."]);
+const LEG_SPLAY=at(18,[
+"...pPp....pPp...",
+"..pPp......pPp..",
+"..pP........Pp..",
+".pP..........Pp.",
+".ww..........ww."]);
+const CLIMB_A=build(false,BACK,ARM_HI,LEG_KNEE),CLIMB_B=build(false,BACK,ARM_MID,LEG_MID);
+const CLIMB=[CLIMB_A,CLIMB_B,build(true,BACK,ARM_HI,LEG_KNEE),CLIMB_B];
+const HIT=build(false,BACK,ARM_HIT,LEG_HANG),FALL=build(false,BACK,ARM_UP,LEG_SPLAY);
+// side view facing right (intro run)
+const SIDE=at(4,[
+"......HHHH......",
+".....HHHHHH.....",
+".....hHHHHH.....",
+".....oooooo.....",
+"....hHHHHHHHHH..",
+".....ddsssss....",
+".....ddsssos....",
+".....dzssssss...",
+".......zsss.....",
+"....NnBBBBb.....",
+"...NnnBBBBb.....",
+"...NnnBBBBb.....",
+"...NnnbBBBb.....",
+"....NnbBBb......",
+".....oooooo....."]);
+const RARM_BACK=at(13,[
+"........B.......",
+".......bB..b....",
+"......Bb....z...",
+".....zs.....zz.."]);
+const RARM_FWD=at(13,[
+"........B.......",
+"........Bb......",
+".........Bs.....",
+"..........sz...."]);
+const RARM_MID=at(13,[
+"........B.......",
+"........Bb......",
+"........zs......"]);
+const RLEG=[at(19,[
+"......pppp......",
+".....Ppp.pp.....",
+"....Pp....pp....",
+"...Pp......pp...",
+"..ww.......www.."]),at(19,[
+"......pppp......",
+"......pPPP......",
+"......p..PP.....",
+"......p...w.....",
+".....ww........."]),at(19,[
+"......pppp......",
+".....ppp.PP.....",
+"....pp....PP....",
+"...pp......PP...",
+"..ww.......www.."]),at(19,[
+"......pppp......",
+"......Pppp......",
+"......P..pp.....",
+"......P...w.....",
+".....ww........."])];
+const RUN=[build(false,SIDE,RARM_BACK,RLEG[0]),build(false,SIDE,RARM_MID,RLEG[1]),build(false,SIDE,RARM_FWD,RLEG[2]),build(false,SIDE,RARM_MID,RLEG[3])];
+const STAND=build(false,SIDE,RARM_MID,at(19,[
+"......pppp......",
+"......pp.pp.....",
+"......pp.pp.....",
+"......pp.pp.....",
+".....www.www...."]));
 
 const FD="A010101111101101B110101110101110C011100100100011D110101101101110E111100110100111F111100110100100G011100101101011H101101111101101I111010010010111J001001001101010K101101110101101L100100100100111M101111111101101N110101101101101O010101101101010P110101110100100Q010101101110011R110101110101101S011100010001110T111010010010010U101101101101111V101101101101010W101101111111101X101101010101101Y101101010010010Z1110010101001110111101101101111101011001001011121100010101001113110001010001110410110111100100151111001100011106011100111101111711100101001001081111011111011119111101111001110!010010010000010-000000111000000:000010000010000<001010100010001>100010001010100.000000000000010?110001010000010+000010111010000";
 const F={};for(let i=0;i<FD.length;i+=16)F[FD[i]]=FD.substr(i+1,15);
 
 let best=0;try{best=+localStorage.getItem('lavaclimb_best')||0}catch(e){}
 
-const f=(x,y,w,h,c)=>{cx.fillStyle=P[c]||c;cx.fillRect(Math.round(x),Math.round(y),w,h)};
+// game logic runs in 144x256 world units; drawing is S times finer
+const S=2;
+const f=(x,y,w,h,c)=>{cx.fillStyle=P[c]||c;const x0=Math.round(x*S),y0=Math.round(y*S);cx.fillRect(x0,y0,Math.round((x+w)*S)-x0,Math.round((y+h)*S)-y0)};
 const hash=n=>{const s=Math.sin(n*127.1)*43758.5453;return s-Math.floor(s)};
 const tw=(s,sc)=>s.length*4*sc-sc;
 function txt(s,x,y,sc,c,sh=true){
@@ -44,9 +212,9 @@ function txt(s,x,y,sc,c,sh=true){
   for(let i=0;i<s.length;i++){const g=F[s[i]];if(!g)continue;
     for(let j=0;j<15;j++)if(g[j]==='1')f(x+i*4*sc+(j%3)*sc,y+(j/3|0)*sc,sc,sc,c)}
 }
-function spr(rows,x,y,flip,tint){
-  for(let r=0;r<rows.length;r++)for(let c=0;c<8;c++){
-    const ch=rows[r][flip?7-c:c];if(ch!=='.')f(x+c,y+r,1,1,tint||ch)}
+function drawSpr(px,x,y,tint){
+  const bx=Math.round(x*S)-1,by=Math.round(y*S)-1;
+  for(const [c,r,col] of px){cx.fillStyle=col?(tint?P[tint]:col):'#120a10';cx.fillRect(bx+c,by+r,1,1)}
 }
 
 // sound
@@ -70,7 +238,7 @@ reset();
 
 const sy=wy=>H-(wy-camY);
 const r3=()=>Math.random()*3|0;
-const hands=()=>p.y+11;
+const hands=()=>p.y+16;
 const isGap=s=>s.type==='G'||s.broken;
 const onSeg=s=>s.lane===p.lane&&hands()>=s.y0&&hands()<s.y1;
 let deadY=0;
@@ -175,8 +343,8 @@ function update(dt){
       if(s.st==='wait'&&p.y>=s.ty){s.st='warn';s.w=.75;s.lane=Math.random()<.6?p.lane:r3();snd(880,880,.05,'square',.03)}
       else if(s.st==='warn'&&(s.w-=dt)<=0){s.st='fall';s.y=camY+H+4}
       else if(s.st==='fall'){s.y-=120*dt;
-        if(s.y<p.y+12&&s.y+9>p.y&&Math.abs(p.x-LX[s.lane])<6){hit();s.st='gone'}
-        else if(!s.chk&&s.y<p.y+6){s.chk=true;if(s.lane!==p.lane&&s.lane===p.prevLane&&T-p.switchT<.6)close('CLOSE')}}
+        if(s.y<p.y+16&&s.y+9>p.y&&Math.abs(p.x-LX[s.lane])<6){hit();s.st='gone'}
+        else if(!s.chk&&s.y<p.y+8){s.chk=true;if(s.lane!==p.lane&&s.lane===p.prevLane&&T-p.switchT<.6)close('CLOSE')}}
     }
     spikes=spikes.filter(s=>s.st!=='gone'&&!(s.st==='fall'&&s.y<camY-20));
 
@@ -184,11 +352,11 @@ function update(dt){
       const dir=-d.side;
       if(d.st==='armed'){
         if(d.y<p.y)d.st='gone';
-        else if((d.y-(p.y+6))/speed<=Math.abs(LX[p.lane]-(d.x+4))/70){d.st='fly';snd(1200,300,.12,'square',.03)}
+        else if((d.y-(p.y+8))/speed<=Math.abs(LX[p.lane]-(d.x+4))/70){d.st='fly';snd(1200,300,.12,'square',.03)}
       } else if(d.st==='fly'){d.x+=70*dir*dt;
         const rel=d.x+4-p.x;
-        if(d.y>p.y&&d.y<p.y+12&&d.x+8>p.x-4&&d.x<p.x+4){hit();d.st='gone'}
-        else if(d.prev!==undefined&&Math.sign(rel)!==Math.sign(d.prev)&&Math.abs(d.y-(p.y+6))<14)close('CLOSE');
+        if(d.y>p.y&&d.y<p.y+16&&d.x+8>p.x-5&&d.x<p.x+5){hit();d.st='gone'}
+        else if(d.prev!==undefined&&Math.sign(rel)!==Math.sign(d.prev)&&Math.abs(d.y-(p.y+8))<14)close('CLOSE');
         d.prev=rel;
         if(d.x<-10||d.x>W+10)d.st='gone'}
     }
@@ -291,11 +459,14 @@ function drawPlayer(){
   if(state==='title')return;
   if(state==='dead'&&p.y<lavaY-12)return;
   if(p.inv>0&&state==='play'&&(T*20|0)%2)return;
-  const x=Math.round(p.x)-4,y=sy(p.y)-12;
-  let tint=state==='dead'&&deathKind==='burn'?((T*10|0)%2?'r':'k'):null;
-  if(state==='intro'&&it<1.3)spr((p.anim|0)%2?RUN1:RUN2,x,y,false,tint);
-  else spr(CLIMB,x,y,(p.anim/6|0)%2===1,tint);
-  if(state==='intro'&&it>=1.3&&it<2&&(T*8|0)%2)txt('!',x+3,y-10,1,'y');
+  const x=p.x-6,y=sy(p.y)-18;
+  const tint=state==='dead'&&deathKind==='burn'?((T*10|0)%2?'r':'k'):null;
+  if(state==='intro'&&it<1.3){const i=(p.anim|0)%4;drawSpr(RUN[i],x,y-(i%2?.5:0),tint)}
+  else if(state==='intro'&&it<2)drawSpr(STAND,x,y,tint);
+  else if(state==='dead')drawSpr(FALL,x,y,tint);
+  else if(p.stun>0)drawSpr(HIT,x,y,tint);
+  else drawSpr(CLIMB[(p.anim/4|0)%4],x,y,tint);
+  if(state==='intro'&&it>=1.3&&it<2&&(T*8|0)%2)txt('!',x+5,y-8,1,'y');
 }
 
 function drawHud(){
@@ -331,7 +502,7 @@ function drawHud(){
 
 function draw(){
   cx.save();
-  if(shake>0)cx.translate(Math.round((Math.random()-.5)*shake),Math.round((Math.random()-.5)*shake));
+  if(shake>0)cx.translate(Math.round((Math.random()-.5)*shake)*S,Math.round((Math.random()-.5)*shake)*S);
   drawBg();drawVines();drawObstacles();drawPlayer();drawLava();
   cx.restore();
   drawHud();
