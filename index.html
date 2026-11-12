@@ -227,11 +227,11 @@ function snd(f1,f2,d,type='square',vol=.05){
   o.connect(g).connect(ac.destination);o.start(t);o.stop(t+d)}catch(e){}
 }
 
-let state='title',T=0,p,camY,lavaY,spikes,waves,jets,traps,segs,genY,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes;
+let state='title',T=0,p,camY,lavaY,spikes,waves,jets,traps,deck,known,lastKind,segs,genY,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes;
 function reset(){
   p={lane:1,x:-6,y:0,stun:0,inv:0,anim:0,vy:0,prevLane:1,switchT:-9};
-  camY=-20;lavaY=-24;spikes=[];waves=[];jets=[];traps=[];segs=[];genY=90;bubbles=[];parts=[];pops=[];
-  nextY=260;it=0;playT=0;deadT=0;speed=30;shake=0;newBest=false;bonus=0;combo=0;comboT=-9;closes=0;
+  camY=-20;lavaY=-24;spikes=[];waves=[];jets=[];traps=[];deck=[];known=new Set();lastKind=null;segs=[];genY=90;bubbles=[];parts=[];pops=[];
+  nextY=200;it=0;playT=0;deadT=0;speed=60;shake=0;newBest=false;bonus=0;combo=0;comboT=-9;closes=0;
 }
 reset();
 
@@ -245,37 +245,50 @@ const curY=()=>state==='dead'?deadY:p.y;
 const height=()=>Math.max(0,Math.floor(curY()/8));
 const score=()=>height()+bonus;
 
-// speed keeps rising for ~3 minutes, then levels off; difficulty follows the same climb
-const spAt=y=>Math.min(115,45+70*(1-Math.exp(-y/9000)));
-const diff=y=>Math.min(1,y/15000);
+// starts fast, ~100 within the first minute, keeps creeping up to 140
+const spAt=y=>Math.min(140,60+80*(1-Math.exp(-y/7000)));
+const diff=y=>Math.min(1,y/12000);
+const FRAG=.9; // fragile vines snap this many seconds after you grab them
 
 // hand-made sections stitched together (Subway Surfers style). m() mirrors lanes left/right.
 // c: sp speed, d difficulty, g gap length, S row spacing (the window between rows shrinks with speed)
 const G=(l,a,b)=>segs.push({lane:l,type:'G',y0:a,y1:b});
 const Fv=(l,a,b)=>segs.push({lane:l,type:'F',y0:a,y1:b,t:-1,broken:false});
 const others=o=>[0,1,2].filter(l=>l!==o);
+const rows=(y,S,g,open)=>{open.forEach((o,i)=>{for(const l of others(o))G(l,y+i*S,y+i*S+g)});return S*(open.length-1)+g};
 const SECTIONS=[
-  {w:[3,.4],f:(y,m,c)=>{G(r3(),y,y+c.g);return c.g}},
-  {w:[3,1.5],f:(y,m,c)=>{for(const l of others(r3()))G(l,y,y+c.g);return c.g}},
+  {w:[1,.2],f:(y,m,c)=>{G(r3(),y,y+c.g);return c.g}},
+  {w:[3,1.5],f:(y,m,c)=>rows(y,c.S,c.g,[r3()])},
   {w:[2,1.5],f:(y,m,c)=>{const st=c.g+Math.max(18,c.sp*(.36-.08*c.d));for(let i=0;i<3;i++)G(m(i),y+i*st,y+i*st+c.g);return st*2+c.g}},
-  {w:[2,1],f:(y,m,c)=>{const o=Math.random()<.5?1:m(0),len=c.S*1.6;for(const l of others(o))G(l,y,y+len);return len}},
-  {w:[1,3],minY:200,f:(y,m,c)=>{for(let i=0;i<3;i++)for(const l of others(m(i)))G(l,y+i*c.S,y+i*c.S+c.g);return c.S*2+c.g}},
-  {w:[0,2.5],minY:2500,f:(y,m,c)=>{for(let i=0;i<4;i++)for(const l of others(m(i%2)))G(l,y+i*c.S,y+i*c.S+c.g);return c.S*3+c.g}},
-  {w:[.5,2],minY:800,f:(y,m,c)=>{const a=r3(),b=a===1?m(0):1;
-    for(const l of others(a))G(l,y,y+c.g);for(const l of others(b))G(l,y+c.S,y+c.S+c.g);return c.S+c.g}},
-  // fragile jump-off: too long to hold; a side lane opens and you jump before it snaps (2s)
-  {w:[2,3.5],minY:450,f:(y,m,c)=>{const f=Math.random()<.5?1:m(0),a=f===1?m(0):1,b=m(2);
-    Fv(f,y,y+c.sp*3.2);G(a,y,y+c.sp*(1.25+.25*c.d));G(b,y,y+c.sp*3.3);return c.sp*3.3}},
-  {w:[2,.4],f:(y,m,c)=>30+Math.random()*50*(1-c.d)},
+  {w:[1.5,1],f:(y,m,c)=>{const o=Math.random()<.5?1:m(0),len=c.S*1.6;for(const l of others(o))G(l,y,y+len);return len}},
+  {w:[2,3],minY:150,f:(y,m,c)=>rows(y,c.S,c.g,[m(0),m(1),m(2)])},
+  {w:[1,2.5],minY:1200,f:(y,m,c)=>rows(y,c.S,c.g,[m(0),m(1),m(0),m(1)])},
+  {w:[1.5,2],minY:300,f:(y,m,c)=>{const a=r3();return rows(y,c.S,c.g,[a,a===1?m(0):1])}},
+  // checker: middle open, then sides open, then middle...
+  {w:[1,2],minY:400,f:(y,m,c)=>{const n=3+(Math.random()<c.d?1:0);
+    for(let i=0;i<n;i++)if(i%2)G(1,y+i*c.S,y+i*c.S+c.g);else{G(0,y+i*c.S,y+i*c.S+c.g);G(2,y+i*c.S,y+i*c.S+c.g)}
+    return c.S*(n-1)+c.g}},
+  // crossfire: open lane jumps from one side to the other (needs a double swipe, so the window is wider)
+  {w:[.5,2],minY:600,f:(y,m,c)=>rows(y,c.g+Math.max(30,c.sp*(.5-.1*c.d)),c.g,[m(0),m(2)])},
+  {w:[.6,.1],f:(y,m,c)=>20+Math.random()*30*(1-c.d)},
 ];
+// fast-crumbling fragile pieces mixed into the layout; short enough to climb over unless you get stunned on one
+function sprinkleFragile(a,b,sp,d){
+  for(let l=0;l<3;l++){
+    if(Math.random()>.15+.3*d)continue;
+    const len=sp*(.55+Math.random()*.2);
+    for(let k=0;k<6;k++){const y0=a+Math.random()*Math.max(0,b-a-len);if(clearAt(l,y0-6,y0+len+6)){Fv(l,y0,y0+len);break}}
+  }
+}
 function placeSection(){
-  const y=genY,d=diff(y),sp=spAt(y),g=Math.round(14+Math.random()*4+d*6),S=g+Math.max(20,sp*(.42-.12*d));
+  const y=genY,d=diff(y),sp=spAt(y),g=Math.round((14+Math.random()*6)*Math.max(1,sp/60)+d*4),S=g+Math.max(20,sp*(.42-.12*d));
   const ok=SECTIONS.filter(s=>y>=(s.minY||0)),wt=s=>s.w[0]+(s.w[1]-s.w[0])*d;
   let r=Math.random()*ok.reduce((t,s)=>t+wt(s),0),sec=ok[0];
   for(const s of ok)if((r-=wt(s))<=0){sec=s;break}
   const flip=Math.random()<.5,len=sec.f(y,l=>flip?2-l:l,{sp,d,g,S});
-  // breathing room between sections: enough for a double swipe even at top speed
-  genY=y+len+Math.max(18,sp*(.6-.25*d))+Math.random()*12;
+  // breathing room between sections: still enough for a double swipe at top speed
+  genY=y+len+Math.max(16,sp*(.5-.2*d))+Math.random()*8;
+  if(y>120)sprinkleFragile(y-10,genY,sp,d);
 }
 
 function close(label){
@@ -293,7 +306,7 @@ function move(d){
     if(s.lane!==p.lane)continue;
     const dist=s.y0-hands();
     if(isGap(s)&&dist>=0&&dist<10){close('DODGE');break}
-    if(s.type==='F'&&!s.broken&&s.t>1.55&&onSeg(s)){close('CLUTCH');break}
+    if(s.type==='F'&&!s.broken&&s.t>FRAG*.65&&onSeg(s)){close('CLUTCH');break}
   }
   p.prevLane=p.lane;p.switchT=T;p.lane=n;snd(520,880,.06);
 }
@@ -314,41 +327,64 @@ function hit(){
 }
 
 // fire jets: a wall vent warns, then fire covers 1-2 lanes from its side.
-// never placed so that every uncovered lane has a gap or fragile vine at that height.
+// never placed so that every uncovered lane has a gap at that height.
 const jetLanes=(side,n)=>(side<0?[0,1]:[2,1]).slice(0,n);
 const clearAt=(l,a,b)=>!segs.some(s=>s.lane===l&&s.y0<b&&s.y1>a);
+// an escape lane only needs to be free of gaps: sitting on a fragile piece is fine while nothing hits you there
+const gapFree=(l,a,b)=>!segs.some(s=>s.lane===l&&s.type==='G'&&s.y0<b&&s.y1>a);
 
-// trap picker: [weight at start, weight at max difficulty, min height]. each spawner returns
-// seconds of travel to keep free after it (so traps don't stack), or null if it couldn't be placed fairly.
-const TRAP_W={wave:[3,2.5],jet:[2,2,300],snake:[1.5,1,200],bats:[1.5,2,500],wall:[1.5,1.5,700],geyser:[1,2.5,900],blade:[.8,2,1400]};
+// each spawner returns seconds of travel to keep free after it (so traps don't stack),
+// or null if it couldn't be placed fairly.
 const SPAWN={
   wave:y=>{waves.push({ty:y-150});return 1.6},
   jet:y=>{
-    const ok=(side,n)=>{const cov=jetLanes(side,n);return [0,1,2].some(l=>!cov.includes(l)&&clearAt(l,y-24,y+20))};
+    const ok=(side,n)=>{const cov=jetLanes(side,n);return [0,1,2].some(l=>!cov.includes(l)&&gapFree(l,y-24,y+20))};
     let side=Math.random()<.5?-1:1,n=Math.random()<.2+.5*diff(y)?2:1;
     if(!ok(side,n)){if(ok(-side,n))side=-side;else if(ok(side,1))n=1;else if(ok(-side,1)){side=-side;n=1}else return null}
     jets.push({st:'idle',y,side,lanes:jetLanes(side,n),reach:side<0?LX[n-1]+6:LX[3-n]-6,t:0});return 0;
   },
-  snake:y=>{traps.push({type:'snake',st:'wait',ty:y-150});return .8},
-  bats:y=>{traps.push({type:'bats',st:'wait',ty:y-150});return 1},
+  drop:y=>{traps.push({type:'drop',st:'wait',ty:y-150});return .9},
+  coil:y0=>{
+    for(const y of [y0,y0+25,y0+50])for(const lane of [0,1,2].sort(()=>Math.random()-.5)){
+      const need=lane===1?[0,2]:[lane===0?2:0];
+      if(need.every(l=>gapFree(l,y-20,y+20))){
+        // the snake sits on solid vine: clear whatever was under it (only ever makes the layout easier)
+        segs=segs.filter(s=>!(s.lane===lane&&s.y0<y+14&&s.y1>y-6));
+        traps.push({type:'coil',st:'idle',y,lane,t:0});return .5;
+      }
+    }
+    return null;
+  },
+  bats:y=>{traps.push({type:'bats',st:'wait',ty:y-150});return 2},
   geyser:y=>{traps.push({type:'geyser',st:'wait',ty:y-150});return 1.4},
   wall:y=>{
     const d=diff(y),both=d>.4&&Math.random()<.35,side=Math.random()<.5?-1:1,len=24;
     const cov=both?[0,2]:[side<0?0:2];
-    if(![0,1,2].some(l=>!cov.includes(l)&&clearAt(l,y-20,y+len+20)))return null;
+    if(![0,1,2].some(l=>!cov.includes(l)&&gapFree(l,y-20,y+len+20)))return null;
     traps.push({type:'wall',st:'on',y,len,side,both,per:1.3-.3*d,ph:Math.random()*2});return .5;
   },
-  blade:y=>{
-    const o={type:'blade',st:'on',y,Py:y+55,L:55,A:.8,w:2*Math.PI/1.9,ph:0},sp=spAt((p.y+y)/2);
-    for(let k=0;k<30;k++){o.ph=Math.random()*1.9;if(bladeFair(o,sp)){traps.push(o);return .6}}
+  blade:y0=>{
+    for(const y of [y0,y0+30,y0+60]){
+      const o={type:'blade',st:'on',y,Py:y+55,L:55,A:.8,w:2*Math.PI/1.9,ph:0},sp=spAt((p.y+y)/2);
+      for(let k=0;k<20;k++){o.ph=Math.random()*1.9;if(bladeFair(o,sp)){traps.push(o);return .6}}
+    }
     return null;
   },
 };
+// traps come from a shuffled deck so every unlocked type shows up regularly; a newly unlocked type comes next.
+// unlock heights in world units (8 per metre): everything is in by ~55m
+const UNLOCK={wave:0,drop:0,coil:60,jet:100,bats:180,wall:260,geyser:340,blade:440};
+function nextKinds(y){
+  const un=Object.keys(UNLOCK).filter(k=>y>=UNLOCK[k]),fresh=un.filter(k=>!known.has(k));
+  if(!deck.length){deck=[...un,'wave'].sort(()=>Math.random()-.5);if(deck[0]===lastKind)deck.push(deck.shift())}
+  return [...fresh,...deck];
+}
 function spawnAt(y){
-  const d=diff(y),wt=w=>w[0]+(w[1]-w[0])*d,opts=Object.entries(TRAP_W).filter(([,w])=>y>=(w[2]||0));
-  let r=Math.random()*opts.reduce((t,[,w])=>t+wt(w),0),kind='wave';
-  for(const [k,w] of opts)if((r-=wt(w))<=0){kind=k;break}
-  return SPAWN[kind](y)??SPAWN.wave(y);
+  for(const k of nextKinds(y).slice(0,4)){
+    const r=SPAWN[k](y);
+    if(r!==null){const i=deck.indexOf(k);if(i>=0)deck.splice(i,1);known.add(k);lastKind=k;return r}
+  }
+  return SPAWN.wave(y);
 }
 
 // small creature sprites: authored tiny, upscaled 1.5x and outlined like the explorer
@@ -372,7 +408,7 @@ function passClose(o,lane,yy){
 }
 // picks the lane to attack: usually yours, only if another lane stays climbable around height a..b
 function aimLane(a,b){
-  const ok=l=>[0,1,2].some(q=>q!==l&&clearAt(q,a,b));
+  const ok=l=>[0,1,2].some(q=>q!==l&&gapFree(q,a,b));
   const order=Math.random()<.65?[p.lane,...others(p.lane).sort(()=>Math.random()-.5)]:[r3(),0,1,2];
   return order.find(ok)??-1;
 }
@@ -383,7 +419,7 @@ const bladeHits=(bx,by,px,py,m=0)=>Math.abs(bx-px)<10+m&&Math.abs(by-(py+9))<13+
 function bladeFair(o,sp){
   let safe=0,threat=0;
   for(let l=0;l<3;l++){
-    if(!clearAt(l,o.y-24,o.y+30))continue;
+    if(!gapFree(l,o.y-24,o.y+30))continue;
     let near=false,h=false;
     for(let t=0;t<9;t+=.02){const py=p.y+sp*t;if(py>o.Py)break;const [bx,by]=bladePos(o,T+t);
       if(bladeHits(bx,by,LX[l],py,6))near=true;if(bladeHits(bx,by,LX[l],py)){h=true;break}}
@@ -396,37 +432,62 @@ function wallExt(o){
   return c<.35?0:c<.5?.06:c<.55?(c-.5)/.05:c<.9?1:c<.95?1-(c-.9)/.05:0;
 }
 
+// snake pieces: banded body segment and a head with eyes and a flicking tongue (tx,ty = tongue direction)
+function snakeSeg(x,y,i,r=2.75){f(x-r-.5,y-2.25,r*2+1,4.5,'#291814');f(x-r,y-1.75,r*2,3.5,['r','y','#291814'][i%3]);f(x-r+.5,y-1.75,1.5,.5,'w')}
+function snakeHead(x,y,tx,ty){
+  f(x-3.25,y-3,6.5,6,'#291814');f(x-2.75,y-2.5,5.5,5,'r');f(x-2.25,y-2.5,3,1,'#ff6c24');
+  f(x-2,y-.5,1,1,'y');f(x+1,y-.5,1,1,'y');f(x-1.75,y-.5,.5,.5,'k');f(x+1.25,y-.5,.5,.5,'k');
+  if((T*6|0)%2)for(let k=0;k<4;k++)f(x+tx*(3.5+k*.5)-.25,y+ty*(3+k*.5)-.25,.5,.5,'#ff77a8');
+}
+
 const TR={
+  // bats swoop diagonally out of a wall in waves; each swoop crosses your height in one lane.
+  // a red "!" on the wall side warns where the next swoop comes from.
   bats:{
     start(o){
-      const vb=35+speed*.25,y0=camY+H+8,t=(y0-(p.y+9))/(vb+speed),ya=hands()+speed*t,lane=aimLane(ya-30,ya+20);
-      if(lane<0)return false;
-      Object.assign(o,{lane,x:LX[lane],y:y0,vb,n:2+(Math.random()<.3+diff(p.y)?1:0),homing:diff(p.y)>.25&&Math.random()<.5,turned:false});
-      snd(1500,900,.12,'square',.03);return true;
+      const d=diff(p.y),n=2+(d>.3?1:0)+(Math.random()<d?1:0),gap=.6-.15*d;
+      o.sw=[];for(let i=0;i<n;i++)o.sw.push({t0:i*gap,st:'pending',red:d>.4&&Math.random()<.4});
+      o.t=0;return true;
     },
     tick(o,dt){
-      o.y-=o.vb*dt;
-      // red bats swerve once toward your lane when they get close
-      if(o.homing&&!o.turned&&o.y-(p.y+9)<speed*.55+40){
-        o.turned=true;
-        if(p.lane!==o.lane){const nl=o.lane+Math.sign(p.lane-o.lane);if([0,1,2].some(q=>q!==nl&&clearAt(q,p.y,p.y+60))){o.lane=nl;snd(1800,1200,.1,'square',.03)}}
+      o.t+=dt;
+      for(const s of o.sw){
+        if(s.st==='pending'&&o.t>=s.t0){
+          s.vb=(40+speed*.2)*(s.red?1.4:1);
+          const tm=(H-73)/(s.vb+speed),ya=hands()+speed*(.4+tm),tgt=aimLane(ya-30,ya+20);
+          if(tgt<0){s.st='gone';continue}
+          s.tgt=tgt;s.side=tgt===1?(Math.random()<.5?-1:1):(tgt===0?1:-1);s.st='warn';s.w=.4;snd(1500,900,.12,'square',.03);
+        } else if(s.st==='warn'&&(s.w-=dt)<=0){
+          s.x0=s.side<0?8:136;s.y0=camY+H+6;
+          s.vx=(LX[s.tgt]-s.x0)/((s.y0-(p.y+9))/(s.vb+speed));s.age=0;s.st='fly';
+        } else if(s.st==='fly'){
+          s.age+=dt;
+          // trailing bats sit behind the leader along the path you see them on, so they all cross the same lane
+          const rv=Math.hypot(s.vx,s.vb+speed),ux=-s.vx/rv,uy=(s.vb+speed)/rv;
+          s.b=[0,1,2].map(i=>[s.x0+s.vx*s.age+ux*7*i,s.y0-s.vb*s.age+uy*7*i]);
+          for(const [bx,by] of s.b)if(!s.hitDone&&Math.abs(bx-p.x)<6&&by>p.y-1&&by<p.y+19){s.hitDone=true;hit()}
+          passClose(s,s.tgt,s.b[0][1]);
+          const [tx,ty]=s.b[2];if(ty<camY-20||tx<-10||tx>W+10)s.st='gone';
+        }
       }
-      o.x+=(LX[o.lane]-o.x)*Math.min(1,dt*6);
-      for(let i=0;i<o.n;i++){const bx=o.x+[-4,4,0][i],by=o.y+[0,5,11][i];
-        if(!o.hitDone&&Math.abs(bx-p.x)<6&&by>p.y-1&&by<p.y+19){o.hitDone=true;hit()}}
-      passClose(o,o.lane,o.y);
-      if(o.y<camY-30)o.dead=true;
+      if(o.sw.every(s=>s.st==='gone'))o.dead=true;
     },
-    draw(o){const fr=(o.homing?BAT_RED:BAT)[(T*12|0)%2];
-      for(let i=0;i<o.n;i++)drawSpr(fr,o.x+[-4,4,0][i]-fr.w/2,sy(o.y+[0,5,11][i])-fr.h/2)},
+    draw(o){
+      for(const s of o.sw){
+        if(s.st==='warn'&&(T*10|0)%2){const x=s.side<0?15:123;txt('!',x,20,2,'r');f(s.side<0?x+8:x-5,24,3,1,'r')}
+        if(s.st==='fly'&&s.b){const fr=(s.red?BAT_RED:BAT)[(T*14|0)%2];for(const [bx,by] of s.b)drawSpr(fr,bx-fr.w/2,sy(by)-fr.h/2)}
+      }
+    },
   },
-  snake:{
+  // dropping snake: red "!" over a lane, then it plunges down that vine fast
+  drop:{
     start(o){
-      const vs=18+speed*.12,y0=camY+H+4,t=(y0-(p.y+9))/(vs+speed),ya=hands()+speed*t,lane=aimLane(ya-30,ya+30);
+      const vs=90+speed*.4,ya=hands()+speed*(.6+(H-70)/(vs+speed)),lane=aimLane(ya-30,ya+30);
       if(lane<0)return false;
-      Object.assign(o,{lane,y:y0,vs});snd(200,120,.3,'sawtooth',.02);return true;
+      Object.assign(o,{lane,vs,st:'warn',w:.6});snd(300,150,.25,'sawtooth',.03);return true;
     },
     tick(o,dt){
+      if(o.st==='warn'){if((o.w-=dt)<=0){o.st='on';o.y=camY+H+4}return}
       o.y-=o.vs*dt;
       for(let i=0;i<8;i++){const yy=o.y+i*3.5;
         if(!o.hitDone&&Math.abs(LX[o.lane]-p.x)<6&&yy>p.y-1&&yy<p.y+19){o.hitDone=true;hit()}}
@@ -434,12 +495,40 @@ const TR={
       if(o.y+28<camY-10)o.dead=true;
     },
     draw(o){
-      for(let i=7;i>=1;i--){const y=sy(o.y+i*3.5),x=LX[o.lane]+Math.sin(T*8+i*.9)*2,r=i>5?2:2.75;
-        f(x-r-.5,y-2.25,r*2+1,4.5,'#291814');f(x-r,y-1.75,r*2,3.5,['r','y','#291814'][i%3]);f(x-r+.5,y-1.75,1.5,.5,'w')}
-      const x=LX[o.lane]+Math.sin(T*8)*2,y=sy(o.y);
-      f(x-3.25,y-3,6.5,6,'#291814');f(x-2.75,y-2.5,5.5,5,'r');f(x-2.25,y-2.5,3,1,'#ff6c24');
-      f(x-2,y-.5,1,1,'y');f(x+1,y-.5,1,1,'y');f(x-1.75,y-.5,.5,.5,'k');f(x+1.25,y-.5,.5,.5,'k');
-      if((T*6|0)%2){f(x-.25,y+3,.5,2,'#ff77a8');f(x-.75,y+5,.5,.5,'#ff77a8');f(x+.25,y+5,.5,.5,'#ff77a8')}
+      if(o.st==='warn'){if((T*8|0)%2)txt('!',LX[o.lane]-1,20,2,'r');return}
+      for(let i=7;i>=1;i--)snakeSeg(LX[o.lane]+Math.sin(T*10+i*.9)*1.5,sy(o.y+i*3.5),i,i>5?2:2.75);
+      snakeHead(LX[o.lane],sy(o.y),0,1);
+    },
+  },
+  // coiled snake sitting on a vine: blocks that vine, rears up toward your side as you approach, then strikes into the next lane
+  coil:{
+    tick(o,dt){
+      o.t+=dt;
+      const near=o.y-(p.y+18);
+      if(o.st==='idle'&&near<60+speed*.15){
+        o.st='rear';o.t=0;o.dir=o.lane===1?(p.lane===2?1:p.lane===0?-1:(Math.random()<.5?-1:1)):(o.lane===0?1:-1);
+        snd(900,700,.2,'square',.02);
+      } else if(o.st==='rear'&&near<4&&o.t>.25){o.st='strike';o.t=0;snd(400,1200,.08,'square',.04)}
+      else if(o.st==='strike'&&o.t>.45)o.st='done';
+      if(!o.hitDone&&Math.abs(p.x-LX[o.lane])<7&&p.y<o.y+9&&p.y+18>o.y-1){o.hitDone=true;hit()}
+      if(o.st==='strike'){
+        const tx=LX[o.lane]+o.dir*32*Math.min(1,o.t/.08),lo=Math.min(LX[o.lane],tx),hi=Math.max(LX[o.lane],tx);
+        if(!o.hitDone&&p.x+5>lo&&p.x-5<hi&&p.y<o.y+12&&p.y+18>o.y){o.hitDone=true;hit()}
+      }
+      if(o.dir&&!o.chk&&p.y>o.y+4){o.chk=true;if(!o.hitDone&&p.lane!==o.lane+o.dir&&p.prevLane===o.lane+o.dir&&T-p.switchT<.8)close('CLOSE')}
+      if(o.y<camY-40)o.dead=true;
+    },
+    draw(o){
+      const x=LX[o.lane],y=sy(o.y);
+      for(let i=0;i<3;i++){const w=8-i*1.5,yy=y-1.5-i*2.5;f(x-w/2-.5,yy-1.75,w+1,3.5,'#291814');f(x-w/2,yy-1.25,w,2.5,['r','y','r'][i]);f(x-w/2+.5,yy-1.25,1.5,.5,'w')}
+      let hx=x,hy=y-10+Math.sin(T*4)*.5;
+      if(o.st==='rear'){hx=x+o.dir*3+((T*30|0)%2)*.5;hy=y-13}
+      if(o.st==='strike'){hx=x+o.dir*32*Math.min(1,o.t/.08);hy=y-6}
+      if(o.st==='done'){hx=x+o.dir*4;hy=y-10}
+      const n=Math.max(1,Math.round(Math.hypot(hx-x,hy-(y-7))/2.5));
+      for(let i=1;i<n;i++)snakeSeg(x+(hx-x)*i/n,(y-7)+(hy-(y-7))*i/n,i,2.25);
+      snakeHead(hx,hy,o.dir||0,o.st==='idle'?-1:0);
+      if(o.st==='rear'&&(T*10|0)%2)txt('!',x+(o.dir||0)*10-1,y-26,1,'r');
     },
   },
   geyser:{
@@ -538,7 +627,8 @@ function fireWave(){
   let open=p.lane;
   for(let i=0;i<n;i++){
     const delay=SPIKE_WARN+i*gapT,ya=hands()+speed*spikeEta(delay);
-    const path=[0,1,2].filter(l=>!segs.some(q=>q.lane===l&&q.type==='G'&&q.y0<ya+20&&q.y1>ya-24));
+    // lanes you can be in when it lands without falling (a fragile piece is fine as long as no spike hits you there)
+    const path=[0,1,2].filter(l=>gapFree(l,ya-30,ya+24));
     if(!path.length)continue;
     let lanes;
     if(i>0&&Math.random()<.35+.45*d){
@@ -578,20 +668,21 @@ function update(dt){
     if(p.y-lavaY>110)lavaY=p.y-110;
 
     while(genY<p.y+300)placeSection();
-    while(nextY<p.y+230){const w=spawnAt(nextY);nextY+=170-90*diff(nextY)+Math.random()*60+w*spAt(nextY)}
+    while(nextY<p.y+230){const w=spawnAt(nextY);nextY+=85-35*diff(nextY)+Math.random()*30+w*spAt(nextY)}
     for(const o of traps){
-      if(o.st==='wait'){if(p.y>=o.ty){if(TR[o.type].start(o))o.st=o.st==='wait'?'on':o.st;else o.dead=true}}
+      // a triggered trap that can't aim fairly right now keeps trying for a moment as the layout scrolls
+      if(o.st==='wait'){if(p.y>=o.ty){if(TR[o.type].start(o))o.st=o.st==='wait'?'on':o.st;else if((o.tries=(o.tries||0)+1)>40){o.dead=true;known.delete(o.type)}}}
       else TR[o.type].tick(o,dt);
     }
     traps=traps.filter(o=>!o.dead);
     for(const w of waves)if(p.y>=w.ty){w.done=true;fireWave()}
     waves=waves.filter(w=>!w.done);
 
-    // fragile vines: timer starts on grab, snaps after 2s
+    // fragile vines: timer starts on grab, snaps after FRAG seconds
     for(const s of segs){
       if(s.type!=='F'||s.broken)continue;
       if(s.t<0&&onSeg(s)&&Math.abs(p.x-LX[s.lane])<5){s.t=0;snd(150,120,.15,'square',.04)}
-      if(s.t>=0&&(s.t+=dt)>=2){
+      if(s.t>=0&&(s.t+=dt)>=FRAG){
         s.broken=true;shake=Math.max(shake,2);snd(300,60,.2,'square',.06);
         for(let i=0;i<14;i++)parts.push({x:LX[s.lane]+Math.random()*4-2,y:Math.max(s.y0,camY)+Math.random()*Math.min(s.y1-s.y0,H),vy:Math.random()*40,l:1,c:Math.random()<.5?'h':'o'});
       }
@@ -662,6 +753,12 @@ function drawBg(){
     }
   }
   f(11.5,0,.5,H,'#3b3743');f(132,0,.5,H,'#3b3743');
+  if(state==='play'&&speed>62){
+    const n=Math.min(18,4+(speed-60)/4|0),len=speed*.3;cx.globalAlpha=Math.min(.6,.3+(speed-60)/200);
+    for(let i=0;i<n;i++){const cyc=Math.floor((T*speed*2.4+i*97)/(H+len)),ys=((T*speed*2.4+i*97)%(H+len))-len;
+      f(14+hash(i*13.7+cyc*3.1)*116,ys,.5,len,i%3?'#5a6ea8':'#8fa3d8')}
+    cx.globalAlpha=1;
+  }
   const gy=sy(0);
   if(gy<H){f(0,gy,W,H-gy,'d');f(0,gy,W,1,'l');for(let x=6;x<W;x+=14)f(x,gy+4,6,1,'k')}
   const pour=state!=='title'&&(state!=='intro'||it>=1.5);
@@ -679,7 +776,7 @@ function drawVines(){
       if(s&&isGap(s))continue;
       const ys=sy(wy);
       if(s){ // fragile: dry, shakes, blinks red before snapping
-        const jx=s.t>1.2&&Math.random()<.5?.5:0,red=s.t>1.5&&(T*10|0)%2,edge=red?'#be1250':'#742f29';
+        const jx=s.t>0&&Math.random()<.5?.5:0,red=s.t>FRAG*.45&&(T*12|0)%2,edge=red?'#be1250':'#742f29';
         f(x+jx,ys,.5,1,edge);f(x+.5+jx,ys,1,1,red?'r':(wy%5<2?'#c98a4b':'h'));f(x+1.5+jx,ys,.5,1,edge);
         if(wy%7===0)f(x+jx+(wy%14?1.5:-.5),ys,1,.5,'#742f29');
         continue;

@@ -16,6 +16,11 @@ Add, remove or reorder anything. Check items off with [x].
 - [x] Spike waves: single and double-lane drops in sequence
 - [x] New traps: lava geyser, bats (red ones swerve), swinging buzzsaw, wall spikes, snake
 - [x] Staircase section was too tight at high speed (~0.13s to switch)
+- [x] Much faster (60 -> 140) with speed streaks; denser, less predictable vine sections
+- [x] Fragile vines mixed into layouts, crumble 0.9s after grab (jump-off section removed)
+- [x] Bats swoop diagonally in waves; coiled striking snake + dropping snake
+- [x] Trap deck: every trap type comes up regularly, new ones introduced one at a time
+- [ ] Buzzsaw sometimes shows up late (it needs a fair spot to swing)
 - [ ] Playtest difficulty curve on a real phone (gaps/jets/spikes frequency)
 
 ## Feel / UX
