@@ -227,11 +227,11 @@ function snd(f1,f2,d,type='square',vol=.05){
   o.connect(g).connect(ac.destination);o.start(t);o.stop(t+d)}catch(e){}
 }
 
-let state='title',T=0,p,camY,lavaY,spikes,darts,segs,busy,prevG,keep,chunkY,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes;
+let state='title',T=0,p,camY,lavaY,spikes,jets,segs,busy,prevG,keep,chunkY,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes;
 const CH=40;
 function reset(){
   p={lane:1,x:-6,y:0,stun:0,inv:0,anim:0,vy:0,prevLane:1,switchT:-9};
-  camY=-20;lavaY=-24;spikes=[];darts=[];segs=[];busy=[0,0,0];prevG=[0,0,0];keep=-1;chunkY=120;bubbles=[];parts=[];pops=[];
+  camY=-20;lavaY=-24;spikes=[];jets=[];segs=[];busy=[0,0,0];prevG=[0,0,0];keep=-1;chunkY=120;bubbles=[];parts=[];pops=[];
   nextY=260;it=0;playT=0;deadT=0;speed=30;shake=0;newBest=false;bonus=0;combo=0;comboT=-9;closes=0;
 }
 reset();
@@ -304,14 +304,21 @@ function hit(){
   p.stun=.45;p.inv=1;p.y-=6;shake=5;combo=0;snd(220,50,.25,'sawtooth',.08);
 }
 
+// fire jets: a wall vent warns, then fire covers 1-2 lanes from its side.
+// never placed so that every uncovered lane has a gap or fragile vine at that height.
+const jetLanes=(side,n)=>(side<0?[0,1]:[2,1]).slice(0,n);
 function spawnAt(y){
-  if(Math.random()<.6)spikes.push({st:'wait',ty:y-150,lane:0,y:0,w:0});
-  else{const side=Math.random()<.5?-1:1;darts.push({st:'armed',y,side,x:side<0?6:130})}
+  const spike=()=>spikes.push({st:'wait',ty:y-150,lane:0,y:0,w:0});
+  if(Math.random()<.6)return spike();
+  const ok=(side,n)=>{const cov=jetLanes(side,n);return [0,1,2].some(l=>!cov.includes(l)&&!segs.some(s=>s.lane===l&&s.y0<y+20&&s.y1>y-24))};
+  let side=Math.random()<.5?-1:1,n=Math.random()<.2+.5*Math.min(1,y/3000)?2:1;
+  if(!ok(side,n)){if(ok(-side,n))side=-side;else if(ok(side,1))n=1;else if(ok(-side,1)){side=-side;n=1}else return spike()}
+  jets.push({st:'idle',y,side,lanes:jetLanes(side,n),reach:side<0?LX[n-1]+6:LX[3-n]-6,t:0});
 }
 
 function update(dt){
   T+=dt;shake=Math.max(0,shake-dt*12);
-  for(const q of parts){q.vy-=200*dt;q.y+=q.vy*dt;q.l-=dt}
+  for(const q of parts){q.vy-=(q.g??200)*dt;q.y+=q.vy*dt;q.x+=(q.vx||0)*dt;q.l-=dt}
   parts=parts.filter(q=>q.l>0);
   for(const q of pops)q.t+=dt;
   pops=pops.filter(q=>q.t<1);
@@ -354,19 +361,22 @@ function update(dt){
     }
     spikes=spikes.filter(s=>s.st!=='gone'&&!(s.st==='fall'&&s.y<camY-20));
 
-    for(const d of darts){
-      const dir=-d.side;
-      if(d.st==='armed'){
-        if(d.y<p.y)d.st='gone';
-        else if((d.y-(p.y+8))/speed<=Math.abs(LX[p.lane]-(d.x+4))/70){d.st='fly';snd(1200,300,.12,'square',.03)}
-      } else if(d.st==='fly'){d.x+=70*dir*dt;
-        const rel=d.x+4-p.x;
-        if(d.y>p.y&&d.y<p.y+16&&d.x+8>p.x-5&&d.x<p.x+5){hit();d.st='gone'}
-        else if(d.prev!==undefined&&Math.sign(rel)!==Math.sign(d.prev)&&Math.abs(d.y-(p.y+8))<14)close('CLOSE');
-        d.prev=rel;
-        if(d.x<-10||d.x>W+10)d.st='gone'}
+    for(const j of jets){
+      const L=j.side<0,mx=L?13:131;
+      if(j.st==='idle'&&(j.y-(p.y+8))/speed<1.15){j.st='warn';j.t=0;snd(90,60,.4,'sawtooth',.04)}
+      else if(j.st==='warn'){
+        if(Math.random()<.5)parts.push({x:mx,y:j.y+Math.random()*2-1,vx:-j.side*(15+Math.random()*25),vy:Math.random()*20-10,g:0,l:.3,c:Math.random()<.5?'o':'y'});
+        if((j.t+=dt)>=.7){j.st='fire';j.t=0;shake=Math.max(shake,1.5);snd(180,50,.6,'sawtooth',.07)}
+      } else if(j.st==='fire'){
+        j.t+=dt;
+        const inY=p.y<j.y+3&&p.y+16>j.y-3,inX=L?p.x<j.reach:p.x>j.reach;
+        if(inY&&inX&&!j.hitDone){j.hitDone=true;hit()}
+        else if(inY&&!inX&&!j.chk&&T-p.switchT<.6&&j.lanes.includes(p.prevLane)){j.chk=true;close('CLOSE')}
+        if(j.t>=.9){j.st='done';j.t=0}
+      } else if(j.st==='done'&&(j.t+=dt)<1.5&&Math.random()<.2)
+        parts.push({x:mx+Math.random()*2-1,y:j.y+1,vx:-j.side*4,vy:4,g:-15,l:.8,c:'#5f574f'});
     }
-    darts=darts.filter(d=>d.st!=='gone'&&d.y>camY-20);
+    jets=jets.filter(j=>j.y>camY-30);
     segs=segs.filter(s=>s.y1>camY-20);
 
     for(const s of segs)if(isGap(s)&&s.lane===p.lane&&Math.abs(p.x-LX[s.lane])<5&&hands()>=s.y0+1&&hands()<s.y1){die('fall');break}
@@ -476,12 +486,28 @@ function drawObstacles(){
       for(let i=0;i<18;i++){const wf=Math.max(1,14-Math.floor(i*.78)),w=wf/2,x0=x-Math.ceil(wf/2)/2,y=t+i/2;
         f(x0,y,w,.5,i<3?'#5f574f':'l');f(x0,y,.5,.5,i<3?'d':'w');if(wf>2)f(x0+w-.5,y,.5,.5,i<3?'#3a3438':'d')}}
   }
-  for(const d of darts){
-    const ys=sy(d.y),wx=d.side<0?8:132;
-    f(wx,ys-1,4,3,'k');
-    if(d.st==='armed'&&(T*6|0)%2)f(wx+1,ys,2,1,'r');
-    if(d.st==='fly'){const lead=d.side<0?d.x+7:d.x,tail=d.side<0?d.x:d.x+6;
-      f(d.x,ys,8,1,'l');f(lead,ys,1,1,'w');f(tail,ys-1,2,1,'r');f(tail,ys+1,2,1,'r')}
+  for(const j of jets){
+    const ys=sy(j.y),L=j.side<0,bx=L?7:131,mx=L?10:131;
+    f(bx,ys-4,6,8,'#4a4552');f(bx,ys-4,6,.5,'#6a6472');f(bx,ys+3.5,6,.5,'#1a181f');
+    f(L?bx+1:bx+4,ys-3,1,1,'#2a2730');f(L?bx+1:bx+4,ys+2,1,1,'#2a2730');
+    const glow=j.st==='warn'?((T*12|0)%2?'o':'r'):j.st==='fire'?'y':j.st==='done'&&j.t<1?'#be1250':null;
+    f(mx,ys-1.5,3,3,'k');if(glow)f(mx+.5,ys-1,2,2,glow);
+    if(j.st==='warn'&&(T*8|0)%2){const a=L?14:j.reach,b=L?j.reach:130;for(let x=a;x<b;x+=3)f(x,ys,1.5,.5,'r')}
+  }
+}
+
+function drawFlames(){
+  for(const j of jets){
+    if(j.st!=='fire')continue;
+    const ys=sy(j.y),L=j.side<0,x0=L?13:131,len=Math.abs(j.reach-x0)+4;
+    const grow=Math.min(1,j.t/.12),fade=j.t>.75?Math.max(.2,(.9-j.t)/.15):1;
+    for(let i=0;i<len*2*grow;i++){
+      const u=i/(len*2),x=L?x0+i/2:x0-i/2-.5;
+      const th=Math.round((2.6+Math.sin(i*.9+T*40)*.6+hash(i+(T*30|0))*.5)*(1-u*.4)*fade*2)/2;
+      f(x,ys-th,.5,th*2,'r');
+      const t2=Math.round(th*1.3)/2;f(x,ys-t2,.5,t2*2,'o');
+      const t3=Math.round(th*.6)/2;if(t3>0)f(x,ys-t3,.5,t3*2,'y');
+    }
   }
 }
 
@@ -533,7 +559,7 @@ function drawHud(){
 function draw(){
   cx.save();
   if(shake>0)cx.translate(Math.round((Math.random()-.5)*shake)*S,Math.round((Math.random()-.5)*shake)*S);
-  drawBg();drawVines();drawObstacles();drawPlayer();drawLava();
+  drawBg();drawVines();drawObstacles();drawPlayer();drawFlames();drawLava();
   cx.restore();
   drawHud();
 }

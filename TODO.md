@@ -7,9 +7,9 @@ Add, remove or reorder anything. Check items off with [x].
 - [ ] Game doesn't pause when the app is backgrounded (you die if you switch apps)
 
 ## Gameplay
-- [ ] Darts are near impossible to dodge: they fly sideways across every lane, and you can only move up
-  - Idea: replace with wall fire jets (vent glows, then fire covers 1-2 lanes from that side; dodge by switching lanes)
-- [ ] Redo vine generator: gaps too often / weird spots, fragile vines too long (snap after 2s, so you're always forced off), layouts don't make sense
+- [x] Darts were near impossible to dodge: replaced with wall fire jets (vent glows, then fire covers 1-2 lanes from that side; dodge by switching lanes)
+- [x] Redo vine generator: always a safe lane, fragile vines short enough to climb past, gaps don't stack weirdly
+- [ ] Playtest difficulty curve on a real phone (gaps/jets/spikes frequency)
 
 ## Feel / UX
 - [ ] Death screen hard to read over lava (add a solid box behind the text)
@@ -19,15 +19,15 @@ Add, remove or reorder anything. Check items off with [x].
 - [ ] Music
 
 ## Models (sprites)
-- [ ] Raise game resolution (2x, 288x512) so everything gets finer, still retro pixel art
-- [ ] Explorer: more detailed, "real-ish" pixel art instead of blocky, stands out from vines
-- [ ] Explorer: real running animation in the intro
-- [ ] Explorer: proper climbing animation (hand over hand, not just a flip)
-- [ ] Explorer: hit pose and fall pose
-- [ ] Wall dart trap: carved face/skull instead of a black box
-- [ ] Darts: proper arrow/dart shape
-- [ ] Fragile vine: easier to tell apart from normal vines
-- [ ] Spikes: look more like stalactites
+- [x] Raise game resolution (2x, 288x512) so everything gets finer, still retro pixel art
+- [x] Explorer: more detailed, outlined, 1.5x bigger
+- [x] Explorer: real running animation in the intro
+- [x] Explorer: proper climbing animation (hand over hand, not just a flip)
+- [x] Explorer: hit pose and fall pose
+- [x] Bricks, pillars, vines, lava, spikes redrawn at 2x detail
+- [ ] Fragile vine: still could be easier to tell apart from normal vines
+- [ ] Title text and HUD font still the old chunky style
+- [ ] Cave entrance and lava pipe at the start still old style
 
 ## Android (Capacitor)
 - [ ] Install Android Studio
