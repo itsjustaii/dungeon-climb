@@ -359,6 +359,11 @@ function laneThreat(l,a,b){
 const gapFree=(l,a,b)=>!segs.some(s=>s.lane===l&&s.type==='G'&&s.y0<b&&s.y1>a)&&!laneThreat(l,a,b);
 // triggered traps start this far below their spot so they go off around where the spawner placed them
 const trig=y=>Math.max(150,spAt(y)*1.4);
+// last-moment safety net, checked when a trap actually launches (its timing is exact by then):
+// is lane l your only way through between heights a..b? if so the trap fizzles instead of firing.
+const onlyWay=(l,a,b)=>others(l).every(q=>!gapFree(q,a,b));
+// where your feet will be when something launched from the top of the screen, closing at v, reaches you
+const meetY=v=>p.y+speed*(camY+H+4-(p.y+19))/(v+speed);
 
 // each spawner returns seconds of travel to keep free after it (so traps don't stack),
 // or null if it couldn't be placed fairly.
@@ -503,6 +508,7 @@ const TR={
           }
           snd(1500,900,.12,'square',.03);
         } else if(s.st==='warn'&&(s.w-=dt)<=0){
+          {const m=meetY(s.vb);if(onlyWay(s.tgt,m-6,m+30)){s.st='gone';continue}}
           s.x0=s.side<0?8:136;s.y0=camY+H+6;
           s.vx=(LX[s.tgt]-s.x0)/((s.y0-(p.y+9))/(s.vb+speed));s.age=0;s.st='fly';
         } else if(s.st==='fly'){
@@ -532,7 +538,14 @@ const TR={
       Object.assign(o,{lane,vs,st:'warn',w:.6*warnK()});snd(300,150,.25,'sawtooth',.03);return true;
     },
     tick(o,dt){
-      if(o.st==='warn'){if((o.w-=dt)<=0){o.st='on';o.y=camY+H+4}return}
+      if(o.st==='warn'){
+        if((o.w-=dt)<=0){
+          // the snake's body is ~28 long, so you're exposed a bit longer than to a spike
+          const m=meetY(o.vs);if(onlyWay(o.lane,m-6,m+25+speed*48/(o.vs+speed))){o.dead=true;return}
+          o.st='on';o.y=camY+H+4;
+        }
+        return;
+      }
       o.y-=o.vs*dt;
       for(let i=0;i<8;i++){const yy=o.y+i*3.5;
         if(!o.hitDone&&Math.abs(LX[o.lane]-p.x)<6&&yy>p.y-1&&yy<p.y+19){o.hitDone=true;hit()}}
@@ -600,7 +613,12 @@ const TR={
         if(s.ph==='wait'){s.ph='warn';snd(70,50,.5,'sawtooth',.04)}
         if(s.ph==='warn'){
           for(const l of s.lanes)if(Math.random()<.4)parts.push({x:LX[l]+Math.random()*8-4,y:Math.max(lavaY,camY)+2,vy:30+Math.random()*30,g:0,l:.5,c:Math.random()<.5?'o':'y'});
-          if(t>=s.wt){s.ph='erupt';shake=Math.max(shake,2);snd(120,40,.6,'sawtooth',.07)}
+          if(t>=s.wt){
+            // fizzles if, right now, every lane it doesn't cover is broken while it's erupting
+            const a=p.y-6,b=p.y+25+speed*(s.dur+.15);
+            if([0,1,2].filter(l=>!s.lanes.includes(l)).every(l=>segs.some(q=>q.lane===l&&q.type==='G'&&q.y0<b&&q.y1>a)))s.ph='done';
+            else{s.ph='erupt';shake=Math.max(shake,2);snd(120,40,.6,'sawtooth',.07)}
+          }
         } else if(s.ph==='erupt'){
           s.top=lavaY+(camY+H+10-lavaY)*Math.min(1,(t-s.wt)/.15);
           if(!s.hitDone&&p.y+2<s.top&&s.lanes.some(l=>Math.abs(p.x-LX[l])<7)){s.hitDone=true;hit()}
@@ -765,7 +783,7 @@ function update(dt){
       if(s.st==='warn'){
         const b=s.w;s.w-=dt;
         if(b>=s.sw&&s.w<s.sw)snd(880,880,.05,'square',.03);
-        if(s.w<=0){s.st='fall';s.y=camY+H+4}}
+        if(s.w<=0){const m=meetY(spikeV());if(onlyWay(s.lane,m-6,m+30))s.st='gone';else{s.st='fall';s.y=camY+H+4}}}
       else if(s.st==='fall'){s.y-=spikeV()*dt;
         if(s.y<p.y+16&&s.y+9>p.y&&Math.abs(p.x-LX[s.lane])<6){hit();s.st='gone'}
         else if(!s.chk&&s.y<p.y+8){s.chk=true;if(s.lane!==p.lane&&s.lane===p.prevLane&&T-p.switchT<.6)close('CLOSE')}}
@@ -777,7 +795,10 @@ function update(dt){
       if(j.st==='idle'&&(j.y-(p.y+8))/speed<.45+.7*warnK()){j.st='warn';j.t=0;j.ww=.7*warnK();snd(90,60,.4,'sawtooth',.04)}
       else if(j.st==='warn'){
         if(Math.random()<.5)parts.push({x:mx,y:j.y+Math.random()*2-1,vx:-j.side*(15+Math.random()*25),vy:Math.random()*20-10,g:0,l:.3,c:Math.random()<.5?'o':'y'});
-        if((j.t+=dt)>=j.ww){j.st='fire';j.t=0;shake=Math.max(shake,1.5);snd(180,50,.6,'sawtooth',.07)}
+        if((j.t+=dt)>=j.ww){
+          if([0,1,2].filter(l=>!j.lanes.includes(l)).every(l=>!gapFree(l,j.y-24,j.y+20))){j.st='done';j.t=0}
+          else{j.st='fire';j.t=0;shake=Math.max(shake,1.5);snd(180,50,.6,'sawtooth',.07)}
+        }
       } else if(j.st==='fire'){
         j.t+=dt;
         const inY=p.y<j.y+3&&p.y+16>j.y-3,inX=L?p.x<j.reach:p.x>j.reach;
