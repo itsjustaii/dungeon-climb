@@ -369,7 +369,18 @@ const gapFree=(l,a,b)=>!segs.some(s=>s.lane===l&&s.type==='G'&&s.y0<b&&s.y1>a)&&
 const trig=y=>Math.max(150,spAt(y)*1.4);
 // last-moment safety net, checked when a trap actually launches (its timing is exact by then):
 // is lane l your only way through between heights a..b? if so the trap fizzles instead of firing.
-const onlyWay=(l,a,b)=>others(l).every(q=>!gapFree(q,a,b));
+const onlyWay=(l,a,b)=>!canEscape([l],a,b);
+// can you stay out of the `hit` lanes from height a to b? one free lane that stays clear works; so do two
+// neighbouring free lanes if at every height at least one of them is clear (with a little overlap to switch)
+// (gapsOnly: ignore other traps, for a trap checking against its own later steps)
+function canEscape(hit,a,b,gapsOnly){
+  const clear=gapsOnly?(l,a,b)=>!segs.some(s=>s.lane===l&&s.type==='G'&&s.y0<b&&s.y1>a):gapFree;
+  const free=[0,1,2].filter(l=>!hit.includes(l));
+  if(free.some(l=>clear(l,a,b)))return true;
+  if(free.length<2||Math.abs(free[0]-free[1])!==1)return false;
+  for(let y=a;y<=b;y+=4)if(!free.some(l=>clear(l,y-8,y+8)))return false;
+  return true;
+}
 // where your feet will be when something launched from the top of the screen, closing at v, reaches you
 const meetY=v=>p.y+speed*(camY+H+4-(p.y+19))/(v+speed);
 // same, for something that will launch w seconds from now (you and the camera both move speed*w meanwhile).
@@ -383,7 +394,7 @@ const HOLD=.8;
 const SPAWN={
   wave:y=>{waves.push({ty:y-trig(y)});return 1.6},
   jet:y=>{
-    const ok=(side,n)=>{const cov=jetLanes(side,n);return [0,1,2].some(l=>!cov.includes(l)&&gapFree(l,y-24,y+20+spAt(y)*.35))};
+    const ok=(side,n)=>{const cov=jetLanes(side,n);return canEscape(cov,y-24,y+20+spAt(y)*.35)};
     let side=Math.random()<.5?-1:1,n=Math.random()<.2+.5*diff(y)?2:1;
     if(!ok(side,n)){if(ok(-side,n))side=-side;else if(ok(side,1))n=1;else if(ok(-side,1)){side=-side;n=1}else return null}
     jets.push({st:'idle',y,side,lanes:jetLanes(side,n),reach:side<0?LX[n-1]+6:LX[3-n]-6,t:0});return 0;
@@ -405,7 +416,7 @@ const SPAWN={
   wall:y=>{
     const d=diff(y),both=d>.4&&Math.random()<.35,side=Math.random()<.5?-1:1,len=24;
     const cov=both?[0,2]:[side<0?0:2];
-    if(![0,1,2].some(l=>!cov.includes(l)&&gapFree(l,y-20,y+len+20)))return null;
+    if(!canEscape(cov,y-20,y+len+20))return null;
     traps.push({type:'wall',st:'on',y,len,side,both,per:1.3-.3*d,ph:Math.random()*2});return .5;
   },
   // later on, two saws hung one above the other swing out of sync
@@ -456,7 +467,7 @@ function passClose(o,lane,yy){
 }
 // picks the lane to attack: usually yours, only if another lane stays climbable around height a..b
 function aimLane(a,b){
-  const ok=l=>[0,1,2].some(q=>q!==l&&gapFree(q,a,b+speed*.35));
+  const ok=l=>canEscape([l],a,b+speed*.35);
   // never aim at a lane you just switched into: that's the lane you escaped to
   if(T-p.switchT<.6)return [p.prevLane,...others(p.lane).filter(l=>l!==p.prevLane)].find(ok)??-1;
   const order=Math.random()<.65?[p.lane,...others(p.lane).sort(()=>Math.random()-.5)]:[r3(),0,1,2];
@@ -624,7 +635,7 @@ const TR={
       else if(pat==='double'){const f=r3();steps=[{lanes:others(f),t0:0,dur:.7}]}
       // every step must leave a lane you can be in (no gap) while it erupts; the window is wider than the
       // last-moment check below, so a geyser that warns almost never has to cancel
-      const fair=st=>st&&st.every(s=>{const a=h0+speed*(s.t0+wt)-34,b=h0+speed*(s.t0+wt+s.dur)+20;return [0,1,2].some(l=>!s.lanes.includes(l)&&gapFree(l,a,b+speed*.35))});
+      const fair=st=>st&&st.every(s=>{const a=h0+speed*(s.t0+wt)-34,b=h0+speed*(s.t0+wt+s.dur)+20;return canEscape(s.lanes,a,b+speed*.35)});
       if(!fair(steps)){const lane=aimLane(h0+speed*wt-34,h0+speed*(wt+.8)+20);if(lane<0)return false;steps=[{lanes:[lane],t0:0,dur:.8}]}
       for(const s of steps)Object.assign(s,{wt,top:lavaY,ph:'wait'});
       Object.assign(o,{steps,t:0});return true;
@@ -641,7 +652,7 @@ const TR={
             // if right now every lane it doesn't cover is broken, it holds its warning a moment and re-checks
             // (usually because you got stunned); only if that drags on does it sputter out
             const a=p.y-6,b=p.y+25+speed*(s.dur+.15);
-            if([0,1,2].filter(l=>!s.lanes.includes(l)).every(l=>segs.some(q=>q.lane===l&&q.type==='G'&&q.y0<b&&q.y1>a))){
+            if(!canEscape(s.lanes,a,b,true)){
               if((s.hold=(s.hold||0)+dt)<HOLD){s.wt+=dt;continue}
               s.ph='done';snd(500,90,.35,'sawtooth',.03);
               for(const l of s.lanes)for(let i=0;i<10;i++)parts.push({x:LX[l]+Math.random()*10-5,y:Math.max(lavaY,camY)+2+Math.random()*4,vx:Math.random()*16-8,vy:15+Math.random()*25,g:-8,l:.9,c:Math.random()<.5?'#5f574f':'#8a8590'});
@@ -787,10 +798,11 @@ function update(dt){
     if(p.y-lavaY>110)lavaY=p.y-110;
 
     while(genY<p.y+300)placeSection();
-    while(nextY<p.y+230){const w=spawnAt(nextY);nextY+=150-100*diff(nextY)+Math.random()*40+w*spAt(nextY)}
+    // after each trap, keep `w` seconds of travel clear (less of it at high speed, so the late game stays busy)
+    while(nextY<p.y+230){const w=spawnAt(nextY);nextY+=150-100*diff(nextY)+Math.random()*40+w*spAt(nextY)*(1-.35*diff(nextY))}
     for(const o of traps){
       // a triggered trap that can't aim fairly right now keeps trying for a moment as the layout scrolls
-      if(o.st==='wait'){if(p.y>=o.ty){if(TR[o.type].start(o))o.st=o.st==='wait'?'on':o.st;else if((o.tries=(o.tries||0)+1)>40){o.dead=true;known.delete(o.type)}}}
+      if(o.st==='wait'){if(p.y>=o.ty){if(TR[o.type].start(o))o.st=o.st==='wait'?'on':o.st;else if((o.tries=(o.tries||0)+1)>40){o.dead=true;fireWave()}}}
       else TR[o.type].tick(o,dt);
     }
     traps=traps.filter(o=>!o.dead);
@@ -827,13 +839,13 @@ function update(dt){
       const L=j.side<0,mx=L?13:131;
       if(j.st==='idle'&&(j.y-(p.y+8))/speed<.45+.7*warnK()){
         // checked before the vent starts glowing: if it couldn't leave you a lane, it stays dark
-        if([0,1,2].filter(l=>!j.lanes.includes(l)).every(l=>!gapFree(l,j.y-30,j.y+26)))j.st='done';
+        if(!canEscape(j.lanes,j.y-30,j.y+26))j.st='done';
         else{j.st='warn';j.t=0;j.ww=.7*warnK();snd(90,60,.4,'sawtooth',.04)}
       }
       else if(j.st==='warn'){
         if(Math.random()<.5)parts.push({x:mx,y:j.y+Math.random()*2-1,vx:-j.side*(15+Math.random()*25),vy:Math.random()*20-10,g:0,l:.3,c:Math.random()<.5?'o':'y'});
         if((j.t+=dt)>=j.ww){
-          if([0,1,2].filter(l=>!j.lanes.includes(l)).every(l=>!gapFree(l,j.y-24,j.y+20))){if((j.hold=(j.hold||0)+dt)>HOLD){j.st='done';j.t=0}else j.t=j.ww}
+          if(!canEscape(j.lanes,j.y-24,j.y+20)){if((j.hold=(j.hold||0)+dt)>HOLD){j.st='done';j.t=0}else j.t=j.ww}
           else{j.st='fire';j.t=0;shake=Math.max(shake,1.5);snd(180,50,.6,'sawtooth',.07)}
         }
       } else if(j.st==='fire'){
