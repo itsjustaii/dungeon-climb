@@ -9,6 +9,9 @@ Add, remove or reorder anything. Check items off with [x].
 ## Gameplay
 - [x] Darts were near impossible to dodge: replaced with wall fire jets (vent glows, then fire covers 1-2 lanes from that side; dodge by switching lanes)
 - [x] Redo vine generator: always a safe lane, fragile vines short enough to climb past, gaps don't stack weirdly
+- [x] Hand-made sections (Subway Surfers style) instead of random rows; fragile bridges and jump-offs
+- [x] Speed keeps ramping for ~3 minutes, then levels off
+- [x] Hits could knock you back into a gap you just passed (unfair death)
 - [ ] Playtest difficulty curve on a real phone (gaps/jets/spikes frequency)
 
 ## Feel / UX
