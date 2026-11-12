@@ -375,19 +375,30 @@ function update(dt){
 }
 
 function drawBg(){
-  f(0,0,W,H,'n');
+  f(0,0,W,H,'#0f1830');
   for(let r=Math.floor(camY/8)-1;r*8<camY+H+8;r++){
     const ys=sy(r*8+8),off=(r&1)*8;
-    f(12,ys,120,1,'k');
     for(let c=-1;c<9;c++){
-      const bx=12+c*16+off,h=hash(r*31.7+c*7.3);
-      f(bx,ys,1,8,'k');
-      if(h>.93)f(bx+5,ys+3,5,2,'u');
-      else if(h>.85)f(bx+1,ys+1,6,1,'g');
+      const bx=12+c*16+off,x0=Math.max(12,bx+.5),x1=Math.min(132,bx+16);
+      if(x1<=x0)continue;
+      const h=hash(r*31.7+c*7.3),t=hash(r*13.1+c*91.7),w=x1-x0;
+      f(x0,ys+.5,w,7.5,t<.4?'#1d2b53':t<.75?'#212f5b':'#1a274c');
+      f(x0,ys+.5,w,.5,'#2c3d72');
+      f(x0,ys+7.5,w,.5,'#151f3f');
+      if(h>.95){f(bx+4,ys+3,1,.5,'#0f1830');f(bx+5,ys+3.5,1,.5,'#0f1830');f(bx+6,ys+4,1.5,.5,'#0f1830');f(bx+7.5,ys+3.5,.5,.5,'#0f1830')}
+      else if(h>.9){f(bx+5,ys+3,5,2,'#3a2448');f(bx+5.5,ys+3.5,4,1,'u')}
+      else if(h>.82){f(bx+1,ys+.5,6,.5,'g');f(bx+1.5,ys+1,4,.5,'G');f(bx+2,ys+1.5,.5,1,'g');f(bx+5,ys+1.5,.5,1.5,'g')}
     }
   }
-  f(0,0,12,H,'k');f(132,0,12,H,'k');f(11,0,1,H,'d');f(132,0,1,H,'d');
-  for(let r=Math.floor(camY/24)-1;r*24<camY+H+24;r++){const ys=sy(r*24);f(0,ys,11,1,'d');f(133,ys,11,1,'d')}
+  f(0,0,12,H,'#0b0b12');f(132,0,12,H,'#0b0b12');
+  for(let r=Math.floor(camY/12)-1;r*12<camY+H+12;r++){
+    const ys=sy(r*12+12),o=(r&1)*3;
+    for(const x of [0,132]){
+      f(x+.5,ys+.5,11,11.5,'#24212b');f(x+.5,ys+.5,11,.5,'#3b3743');f(x+.5,ys+11.5,11,.5,'#16141b');
+      f(x+4+o,ys+.5,.5,11.5,'#0b0b12');
+    }
+  }
+  f(11.5,0,.5,H,'#3b3743');f(132,0,.5,H,'#3b3743');
   const gy=sy(0);
   if(gy<H){f(0,gy,W,H-gy,'d');f(0,gy,W,1,'l');for(let x=6;x<W;x+=14)f(x,gy+4,6,1,'k')}
   const pour=state!=='title'&&(state!=='intro'||it>=1.5);
@@ -405,17 +416,25 @@ function drawVines(){
       if(s&&isGap(s))continue;
       const ys=sy(wy);
       if(s){ // fragile: dry, shakes, blinks red before snapping
-        const jx=s.t>1.2&&Math.random()<.5?1:0,red=s.t>1.5&&(T*10|0)%2;
-        f(x+jx,ys,1,1,red?'r':(wy%5<2?'o':'h'));f(x+1+jx,ys,1,1,red?'r':'h');
-        if(wy%9===0)f(x+jx+(wy%18?2:-1),ys,1,1,'k');
+        const jx=s.t>1.2&&Math.random()<.5?.5:0,red=s.t>1.5&&(T*10|0)%2,edge=red?'#be1250':'#742f29';
+        f(x+jx,ys,.5,1,edge);f(x+.5+jx,ys,1,1,red?'r':(wy%5<2?'#c98a4b':'h'));f(x+1.5+jx,ys,.5,1,edge);
+        if(wy%7===0)f(x+jx+(wy%14?1.5:-.5),ys,1,.5,'#742f29');
         continue;
       }
-      f(x,ys,1,1,(wy%6<3)?'G':'g');f(x+1,ys,1,1,'g');
-      if(wy%10===0){const h=hash(l*97+wy);if(h>.5)f(h>.75?x-2:x+2,ys,2,2,'G')}
+      f(x,ys,.5,1,'g');f(x+.5,ys,1,1,'G');f(x+1.5,ys,.5,1,'g');
+      f(x+((wy%6)<3?.5:1),ys,.5,.5,'#a8e72e');
+      if(wy%10===0){const h=hash(l*97+wy);
+        if(h>.72){f(x+2,ys,1,.5,'g');f(x+2.5,ys-.5,1.5,.5,'G');f(x+3.5,ys-1,1,.5,'G');f(x+3,ys-.5,.5,.5,'#a8e72e')}
+        else if(h>.45){f(x-1,ys,1,.5,'g');f(x-2,ys-.5,1.5,.5,'G');f(x-2.5,ys-1,1,.5,'G');f(x-1.5,ys-.5,.5,.5,'#a8e72e')}
+      }
     }
-    for(const s of ls)if(isGap(s)){f(x-1,sy(s.y0)-1,1,2,'h');f(x+2,sy(s.y0)-2,1,2,'h');f(x,sy(s.y1),1,2,'h');f(x+1,sy(s.y1)+1,1,2,'h')}
+    for(const s of ls)if(isGap(s)){
+      const a=sy(s.y0),b=sy(s.y1),c=s.type==='F'?'h':'g',c2=s.type==='F'?'#c98a4b':'G';
+      f(x,a-1,.5,1,c);f(x+1,a-1.5,.5,1.5,c2);f(x+1.5,a-.5,.5,.5,c);
+      f(x+.5,b,.5,1.5,c);f(x+1.5,b,.5,1,c2);f(x-.5,b+1,.5,.5,c);
+    }
   }
-  for(const q of parts)f(q.x,sy(q.y),1,1,q.c);
+  for(const q of parts)f(q.x,sy(q.y),.5,.5,q.c);
 }
 
 function drawLava(){
@@ -429,22 +448,27 @@ function drawLava(){
   }
   const ly=sy(lavaY);
   if(ly>=H+4)return;
-  for(let x=0;x<W;x++){
-    const wv=Math.round(Math.sin(x*.35+T*5)*1.2+Math.sin(x*.13-T*3));
-    const top=ly+wv;
-    if(((x+(T*8|0))&3)===0)f(x,top-3,1,1,'u');
-    f(x,top,1,H-top+4,'o');f(x,top,1,1,'y');
-    for(let r=6;r<10;r++)if((x+r)&1)f(x,top+r,1,1,'r');
-    f(x,top+10,1,H,'r');
+  cx.globalAlpha=.16;f(0,ly-12,W,14,'r');cx.globalAlpha=.08;f(0,ly-28,W,16,'o');cx.globalAlpha=1;
+  for(let i=0;i<W*2;i++){
+    const x=i/2,top=Math.round((ly+Math.sin(x*.35+T*5)*1.2+Math.sin(x*.13-T*3))*2)/2;
+    if(((i+(T*8|0))&7)===0)f(x,top-2.5,.5,.5,'o');
+    f(x,top,.5,10,'o');f(x,top,.5,.5,'w');f(x,top+.5,.5,1,'y');
+    if(((i>>2)+(T*4|0))%5===0)f(x,top+1.5,.5,1.5,'y');
+    for(let r=6;r<10;r+=.5)if((i+r*2)&1)f(x,top+r,.5,.5,'r');
+    f(x,top+10,.5,12,'r');
+    for(let r=22;r<26;r+=.5)if((i+r*2)&1)f(x,top+r,.5,.5,'#be1250');
+    f(x,top+26,.5,H,'#be1250');
   }
-  for(const b of bubbles){const by=ly+4+((b.x*7)%30);if(by<H)f(b.x,by,2,2,b.l>.2?'y':'o')}
+  for(const b of bubbles){const by=ly+4+((b.x*7)%30);if(by<H){f(b.x,by,1.5,1.5,b.l>.2?'y':'o');f(b.x+.5,by+.5,.5,.5,'w')}}
 }
 
 function drawObstacles(){
   for(const s of spikes){
     if(s.st==='warn'&&(T*8|0)%2)txt('!',LX[s.lane]-1,20,2,'y');
     if(s.st==='fall'){const t=sy(s.y+9),x=LX[s.lane];
-      for(let i=0;i<9;i++){const w=Math.max(1,7-Math.floor(i*.8));f(x-(w>>1),t+i,w,1,i<2?'d':'l')}}
+      f(x-.5,t-4,.5,3,'#5f574f');f(x+1,t-3,.5,2,'#5f574f');
+      for(let i=0;i<18;i++){const wf=Math.max(1,14-Math.floor(i*.78)),w=wf/2,x0=x-Math.ceil(wf/2)/2,y=t+i/2;
+        f(x0,y,w,.5,i<3?'#5f574f':'l');f(x0,y,.5,.5,i<3?'d':'w');if(wf>2)f(x0+w-.5,y,.5,.5,i<3?'#3a3438':'d')}}
   }
   for(const d of darts){
     const ys=sy(d.y),wx=d.side<0?8:132;
