@@ -73,7 +73,10 @@ const r3=()=>Math.random()*3|0;
 const hands=()=>p.y+11;
 const isGap=s=>s.type==='G'||s.broken;
 const onSeg=s=>s.lane===p.lane&&hands()>=s.y0&&hands()<s.y1;
-const score=()=>Math.max(0,Math.floor(p.y/8))+bonus;
+let deadY=0;
+const curY=()=>state==='dead'?deadY:p.y;
+const height=()=>Math.max(0,Math.floor(curY()/8));
+const score=()=>height()+bonus;
 
 // one row of vine chunks; every chunk keeps at least one usable lane
 function genChunk(){
@@ -118,7 +121,7 @@ function tap(){
   else if(state==='dead'&&deadT>.8){reset();state='intro';snd(330,660,.15)}
 }
 function die(kind){
-  state='dead';deathKind=kind;deadT=0;p.vy=0;shake=6;
+  deadY=p.y;state='dead';deathKind=kind;deadT=0;p.vy=0;shake=6;
   if(score()>best){best=score();newBest=true;try{localStorage.setItem('lavaclimb_best',best)}catch(e){}}
   snd(440,40,.8,'sawtooth',.07);
 }
@@ -303,7 +306,7 @@ function drawHud(){
     txt('HI '+best,'c',172,1,'y');
     return;
   }
-  const m=Math.max(0,Math.floor(p.y/8));
+  const m=height();
   txt(''+score(),16,8,2,'w');txt(m+'M',16,22,1,'l');
   if(combo>1&&T-comboT<3)txt('X'+combo,16+tw(''+score(),2)+4,8,1,'y');
   const hi='HI '+best;txt(hi,128-tw(hi,1),10,1,'y');
