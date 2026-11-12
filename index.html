@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>Lava Climb</title>
+<title>Dungeon Climb</title>
 <style>
 html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
 #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
@@ -15,7 +15,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 <body>
 <div id="stage">
 <div id="wrap">
-<canvas id="g" width="144" height="256" role="img" aria-label="Lava Climb game. Swipe or use arrow keys to switch vines; tap or press space to start."></canvas>
+<canvas id="g" width="144" height="256" role="img" aria-label="Dungeon Climb game. Swipe or use arrow keys to switch vines; tap or press space to start."></canvas>
 <div id="crt"></div>
 </div>
 </div>
@@ -297,7 +297,7 @@ function drawPlayer(){
 
 function drawHud(){
   if(state==='title'){
-    txt('LAVA','c',40,4,'o');txt('CLIMB','c',64,4,'G');
+    txt('DUNGEON','c',40,4,'o');txt('CLIMB','c',64,4,'G');
     if((T*2|0)%2===0)txt('TAP TO START','c',140,1,'w');
     txt('SWIPE OR ARROWS','c',156,1,'l');
     txt('HI '+best,'c',172,1,'y');
