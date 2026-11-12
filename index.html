@@ -353,6 +353,14 @@ function laneThreat(l,a,b){
     if(o.type==='coil'&&o.y<b+20&&o.y>a-20&&(o.lane===l||(o.dir&&o.lane+o.dir===l)))return true;
     if(o.type==='blade'&&o.y-10<b&&o.Py-25>a)return true;
   }
+  // a warning that's already showing reserves its lane around where it will reach you (m), so nothing
+  // placed later can take away the escape from it
+  const near=m=>m!==undefined&&m>a-25&&m<b+25;
+  if(spikes.some(s=>s.lane===l&&s.st!=='gone'&&near(s.m)))return true;
+  for(const o of traps){
+    if(o.type==='drop'&&!o.dead&&o.lane===l&&near(o.m))return true;
+    if(o.type==='bats'&&o.sw&&o.sw.some(s=>s.tgt===l&&s.st!=='gone'&&near(s.m)))return true;
+  }
   return jets.some(j=>j.st!=='done'&&j.lanes.includes(l)&&j.y>a-6&&j.y<b+6);
 }
 // an escape lane must be free of gaps and other traps: sitting on a fragile piece is fine while nothing hits you there
@@ -364,6 +372,11 @@ const trig=y=>Math.max(150,spAt(y)*1.4);
 const onlyWay=(l,a,b)=>others(l).every(q=>!gapFree(q,a,b));
 // where your feet will be when something launched from the top of the screen, closing at v, reaches you
 const meetY=v=>p.y+speed*(camY+H+4-(p.y+19))/(v+speed);
+// same, for something that will launch w seconds from now (you and the camera both move speed*w meanwhile).
+// warnings use this with a wider margin than the launch check, so a warning that shows always goes off.
+const meetAhead=(v,w)=>meetY(v)+speed*w;
+// a trap whose warning is showing but can't fire fairly yet holds its warning up to this long, re-checking each frame
+const HOLD=.8;
 
 // each spawner returns seconds of travel to keep free after it (so traps don't stack),
 // or null if it couldn't be placed fairly.
@@ -503,22 +516,22 @@ const TR={
       for(const s of o.sw){
         if(s.st==='pending'&&o.t>=s.t0){
           s.vb=(40+speed*.2)*(s.red?1.4:1);
-          const ww=.5*warnK(),ya=hands()+speed*(ww+(H-73)/(s.vb+speed));
+          const ww=.5*warnK(),m=meetAhead(s.vb,ww);
           if(s.cross){
             // two swoops from opposite walls cross each other, leaving one lane open
-            const free=[0,1,2].filter(l=>gapFree(l,ya-30,ya+20+speed*.35));
+            const free=[0,1,2].filter(l=>gapFree(l,m-20,m+42+speed*.35));
             if(!free.length){s.st='gone';continue}
             const [a,b]=others(free[Math.random()*free.length|0]);
-            Object.assign(s,{tgt:b,side:-1,st:'warn',w:ww});
-            o.sw.push({st:'warn',w:ww,tgt:a,side:1,vb:s.vb,red:s.red});
+            Object.assign(s,{tgt:b,side:-1,st:'warn',w:ww,m});
+            o.sw.push({st:'warn',w:ww,tgt:a,side:1,vb:s.vb,red:s.red,m});
           } else {
-            const tgt=aimLane(ya-30,ya+20);
+            const tgt=aimLane(m-20,m+42);
             if(tgt<0){s.st='gone';continue}
-            Object.assign(s,{tgt,side:tgt===1?(Math.random()<.5?-1:1):(tgt===0?1:-1),st:'warn',w:ww});
+            Object.assign(s,{tgt,side:tgt===1?(Math.random()<.5?-1:1):(tgt===0?1:-1),st:'warn',w:ww,m});
           }
           snd(1500,900,.12,'square',.03);
         } else if(s.st==='warn'&&(s.w-=dt)<=0){
-          {const m=meetY(s.vb);if(onlyWay(s.tgt,m-6,m+30)){s.st='gone';continue}}
+          {const m=meetY(s.vb);if(onlyWay(s.tgt,m-6,m+30)){if((s.hold=(s.hold||0)+dt)>HOLD)s.st='gone';else s.w=0;continue}}
           s.x0=s.side<0?8:136;s.y0=camY+H+6;
           s.vx=(LX[s.tgt]-s.x0)/((s.y0-(p.y+9))/(s.vb+speed));s.age=0;s.st='fly';
         } else if(s.st==='fly'){
@@ -543,15 +556,15 @@ const TR={
   // dropping snake: red "!" over a lane, then it plunges down that vine fast
   drop:{
     start(o){
-      const vs=90+speed*.4,ya=hands()+speed*(.6+(H-70)/(vs+speed)),lane=aimLane(ya-30,ya+30);
+      const vs=90+speed*.4,w=.6*warnK(),m=meetAhead(vs,w),lane=aimLane(m-20,m+42+speed*48/(vs+speed));
       if(lane<0)return false;
-      Object.assign(o,{lane,vs,st:'warn',w:.6*warnK()});snd(300,150,.25,'sawtooth',.03);return true;
+      Object.assign(o,{lane,vs,st:'warn',w,m});snd(300,150,.25,'sawtooth',.03);return true;
     },
     tick(o,dt){
       if(o.st==='warn'){
         if((o.w-=dt)<=0){
           // the snake's body is ~28 long, so you're exposed a bit longer than to a spike
-          const m=meetY(o.vs);if(onlyWay(o.lane,m-6,m+25+speed*48/(o.vs+speed))){o.dead=true;return}
+          const m=meetY(o.vs);if(onlyWay(o.lane,m-6,m+25+speed*48/(o.vs+speed))){if((o.hold=(o.hold||0)+dt)>HOLD)o.dead=true;return}
           o.st='on';o.y=camY+H+4;
         }
         return;
@@ -625,10 +638,11 @@ const TR={
         if(s.ph==='warn'){
           for(const l of s.lanes)if(Math.random()<.4)parts.push({x:LX[l]+Math.random()*8-4,y:Math.max(lavaY,camY)+2,vy:30+Math.random()*30,g:0,l:.5,c:Math.random()<.5?'o':'y'});
           if(t>=s.wt){
-            // fizzles if, right now, every lane it doesn't cover is broken while it's erupting
+            // if right now every lane it doesn't cover is broken, it holds its warning a moment and re-checks
+            // (usually because you got stunned); only if that drags on does it sputter out
             const a=p.y-6,b=p.y+25+speed*(s.dur+.15);
             if([0,1,2].filter(l=>!s.lanes.includes(l)).every(l=>segs.some(q=>q.lane===l&&q.type==='G'&&q.y0<b&&q.y1>a))){
-              // sputters out: a puff of smoke and a hiss instead of erupting
+              if((s.hold=(s.hold||0)+dt)<HOLD){s.wt+=dt;continue}
               s.ph='done';snd(500,90,.35,'sawtooth',.03);
               for(const l of s.lanes)for(let i=0;i<10;i++)parts.push({x:LX[l]+Math.random()*10-5,y:Math.max(lavaY,camY)+2+Math.random()*4,vx:Math.random()*16-8,vy:15+Math.random()*25,g:-8,l:.9,c:Math.random()<.5?'#5f574f':'#8a8590'});
             } else{s.ph='erupt';shake=Math.max(shake,2);snd(120,40,.6,'sawtooth',.07)}
@@ -796,8 +810,13 @@ function update(dt){
     for(const s of spikes){
       if(s.st==='warn'){
         const b=s.w;s.w-=dt;
-        if(b>=s.sw&&s.w<s.sw)snd(880,880,.05,'square',.03);
-        if(s.w<=0){const m=meetY(spikeV());if(onlyWay(s.lane,m-6,m+30))s.st='gone';else{s.st='fall';s.y=camY+H+4}}}
+        if(b>=s.sw&&s.w<s.sw){
+          // decided before the "!" ever shows: if this drop could leave you nowhere to go, it never appears
+          const m=meetAhead(spikeV(),s.w);
+          if(onlyWay(s.lane,m-20,m+42)){s.st='gone';continue}
+          s.m=m;snd(880,880,.05,'square',.03);
+        }
+        if(s.w<=0){const m=meetY(spikeV());if(onlyWay(s.lane,m-6,m+30)){if((s.hold=(s.hold||0)+dt)>HOLD)s.st='gone'}else{s.st='fall';s.y=camY+H+4}}}
       else if(s.st==='fall'){s.y-=spikeV()*dt;
         if(s.y<p.y+16&&s.y+13.5>p.y&&Math.abs(p.x-LX[s.lane])<7){hit();s.st='gone'}
         else if(!s.chk&&s.y<p.y+8){s.chk=true;if(s.lane!==p.lane&&s.lane===p.prevLane&&T-p.switchT<.6)close('CLOSE')}}
@@ -806,11 +825,15 @@ function update(dt){
 
     for(const j of jets){
       const L=j.side<0,mx=L?13:131;
-      if(j.st==='idle'&&(j.y-(p.y+8))/speed<.45+.7*warnK()){j.st='warn';j.t=0;j.ww=.7*warnK();snd(90,60,.4,'sawtooth',.04)}
+      if(j.st==='idle'&&(j.y-(p.y+8))/speed<.45+.7*warnK()){
+        // checked before the vent starts glowing: if it couldn't leave you a lane, it stays dark
+        if([0,1,2].filter(l=>!j.lanes.includes(l)).every(l=>!gapFree(l,j.y-30,j.y+26)))j.st='done';
+        else{j.st='warn';j.t=0;j.ww=.7*warnK();snd(90,60,.4,'sawtooth',.04)}
+      }
       else if(j.st==='warn'){
         if(Math.random()<.5)parts.push({x:mx,y:j.y+Math.random()*2-1,vx:-j.side*(15+Math.random()*25),vy:Math.random()*20-10,g:0,l:.3,c:Math.random()<.5?'o':'y'});
         if((j.t+=dt)>=j.ww){
-          if([0,1,2].filter(l=>!j.lanes.includes(l)).every(l=>!gapFree(l,j.y-24,j.y+20))){j.st='done';j.t=0}
+          if([0,1,2].filter(l=>!j.lanes.includes(l)).every(l=>!gapFree(l,j.y-24,j.y+20))){if((j.hold=(j.hold||0)+dt)>HOLD){j.st='done';j.t=0}else j.t=j.ww}
           else{j.st='fire';j.t=0;shake=Math.max(shake,1.5);snd(180,50,.6,'sawtooth',.07)}
         }
       } else if(j.st==='fire'){
