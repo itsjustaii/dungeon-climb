@@ -227,10 +227,10 @@ function snd(f1,f2,d,type='square',vol=.05){
   o.connect(g).connect(ac.destination);o.start(t);o.stop(t+d)}catch(e){}
 }
 
-let state='title',T=0,p,camY,lavaY,spikes,waves,jets,segs,genY,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes;
+let state='title',T=0,p,camY,lavaY,spikes,waves,jets,traps,segs,genY,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes;
 function reset(){
   p={lane:1,x:-6,y:0,stun:0,inv:0,anim:0,vy:0,prevLane:1,switchT:-9};
-  camY=-20;lavaY=-24;spikes=[];waves=[];jets=[];segs=[];genY=90;bubbles=[];parts=[];pops=[];
+  camY=-20;lavaY=-24;spikes=[];waves=[];jets=[];traps=[];segs=[];genY=90;bubbles=[];parts=[];pops=[];
   nextY=260;it=0;playT=0;deadT=0;speed=30;shake=0;newBest=false;bonus=0;combo=0;comboT=-9;closes=0;
 }
 reset();
@@ -257,7 +257,7 @@ const others=o=>[0,1,2].filter(l=>l!==o);
 const SECTIONS=[
   {w:[3,.4],f:(y,m,c)=>{G(r3(),y,y+c.g);return c.g}},
   {w:[3,1.5],f:(y,m,c)=>{for(const l of others(r3()))G(l,y,y+c.g);return c.g}},
-  {w:[2,1.5],f:(y,m,c)=>{for(let i=0;i<3;i++)G(m(i),y+i*c.S*.6,y+i*c.S*.6+c.g);return c.S*1.2+c.g}},
+  {w:[2,1.5],f:(y,m,c)=>{const st=c.g+Math.max(18,c.sp*(.36-.08*c.d));for(let i=0;i<3;i++)G(m(i),y+i*st,y+i*st+c.g);return st*2+c.g}},
   {w:[2,1],f:(y,m,c)=>{const o=Math.random()<.5?1:m(0),len=c.S*1.6;for(const l of others(o))G(l,y,y+len);return len}},
   {w:[1,3],minY:200,f:(y,m,c)=>{for(let i=0;i<3;i++)for(const l of others(m(i)))G(l,y+i*c.S,y+i*c.S+c.g);return c.S*2+c.g}},
   {w:[0,2.5],minY:2500,f:(y,m,c)=>{for(let i=0;i<4;i++)for(const l of others(m(i%2)))G(l,y+i*c.S,y+i*c.S+c.g);return c.S*3+c.g}},
@@ -316,16 +316,218 @@ function hit(){
 // fire jets: a wall vent warns, then fire covers 1-2 lanes from its side.
 // never placed so that every uncovered lane has a gap or fragile vine at that height.
 const jetLanes=(side,n)=>(side<0?[0,1]:[2,1]).slice(0,n);
-// returns 1 for a spike wave so the next trap waits until the wave is over
+const clearAt=(l,a,b)=>!segs.some(s=>s.lane===l&&s.y0<b&&s.y1>a);
+
+// trap picker: [weight at start, weight at max difficulty, min height]. each spawner returns
+// seconds of travel to keep free after it (so traps don't stack), or null if it couldn't be placed fairly.
+const TRAP_W={wave:[3,2.5],jet:[2,2,300],snake:[1.5,1,200],bats:[1.5,2,500],wall:[1.5,1.5,700],geyser:[1,2.5,900],blade:[.8,2,1400]};
+const SPAWN={
+  wave:y=>{waves.push({ty:y-150});return 1.6},
+  jet:y=>{
+    const ok=(side,n)=>{const cov=jetLanes(side,n);return [0,1,2].some(l=>!cov.includes(l)&&clearAt(l,y-24,y+20))};
+    let side=Math.random()<.5?-1:1,n=Math.random()<.2+.5*diff(y)?2:1;
+    if(!ok(side,n)){if(ok(-side,n))side=-side;else if(ok(side,1))n=1;else if(ok(-side,1)){side=-side;n=1}else return null}
+    jets.push({st:'idle',y,side,lanes:jetLanes(side,n),reach:side<0?LX[n-1]+6:LX[3-n]-6,t:0});return 0;
+  },
+  snake:y=>{traps.push({type:'snake',st:'wait',ty:y-150});return .8},
+  bats:y=>{traps.push({type:'bats',st:'wait',ty:y-150});return 1},
+  geyser:y=>{traps.push({type:'geyser',st:'wait',ty:y-150});return 1.4},
+  wall:y=>{
+    const d=diff(y),both=d>.4&&Math.random()<.35,side=Math.random()<.5?-1:1,len=24;
+    const cov=both?[0,2]:[side<0?0:2];
+    if(![0,1,2].some(l=>!cov.includes(l)&&clearAt(l,y-20,y+len+20)))return null;
+    traps.push({type:'wall',st:'on',y,len,side,both,per:1.3-.3*d,ph:Math.random()*2});return .5;
+  },
+  blade:y=>{
+    const o={type:'blade',st:'on',y,Py:y+55,L:55,A:.8,w:2*Math.PI/1.9,ph:0},sp=spAt((p.y+y)/2);
+    for(let k=0;k<30;k++){o.ph=Math.random()*1.9;if(bladeFair(o,sp)){traps.push(o);return .6}}
+    return null;
+  },
+};
 function spawnAt(y){
-  const wave=()=>{waves.push({ty:y-150});return 1};
-  if(Math.random()<.6)return wave();
-  const ok=(side,n)=>{const cov=jetLanes(side,n);return [0,1,2].some(l=>!cov.includes(l)&&!segs.some(s=>s.lane===l&&s.y0<y+20&&s.y1>y-24))};
-  let side=Math.random()<.5?-1:1,n=Math.random()<.2+.5*diff(y)?2:1;
-  if(!ok(side,n)){if(ok(-side,n))side=-side;else if(ok(side,1))n=1;else if(ok(-side,1)){side=-side;n=1}else return wave()}
-  jets.push({st:'idle',y,side,lanes:jetLanes(side,n),reach:side<0?LX[n-1]+6:LX[3-n]-6,t:0});
-  return 0;
+  const d=diff(y),wt=w=>w[0]+(w[1]-w[0])*d,opts=Object.entries(TRAP_W).filter(([,w])=>y>=(w[2]||0));
+  let r=Math.random()*opts.reduce((t,[,w])=>t+wt(w),0),kind='wave';
+  for(const [k,w] of opts)if((r-=wt(w))<=0){kind=k;break}
+  return SPAWN[kind](y)??SPAWN.wave(y);
 }
+
+// small creature sprites: authored tiny, upscaled 1.5x and outlined like the explorer
+function mkSpr(rows,pal){
+  const g=scale3(rows.map(r=>[...r])),h=g.length,w=g[0].length,on=(r,c)=>r>=0&&r<h&&c>=0&&c<w&&g[r][c]!=='.',px=[];
+  for(let r=-1;r<=h;r++)for(let c=-1;c<=w;c++){
+    if(on(r,c))px.push([c+1,r+1,pal[g[r][c]]]);
+    else if(on(r-1,c)||on(r+1,c)||on(r,c-1)||on(r,c+1))px.push([c+1,r+1,null]);
+  }
+  px.w=(w+2)/S;px.h=(h+2)/S;return px;
+}
+const BAT_ROWS=[
+ ["w.........w","ww.......ww","www.bbb.www",".wwbrbrbww.","...bbbbb...","....b.b...."],
+ ["....bbb....","...brbrb...",".wwbbbbbww.","www.....www","ww.......ww","w.........w"]];
+const BAT=BAT_ROWS.map(r=>mkSpr(r,{w:'#a28879',b:'#c2c3c7',r:'#ff004d'}));
+const BAT_RED=BAT_ROWS.map(r=>mkSpr(r,{w:'#be1250',b:'#ff6c24',r:'#ffec27'}));
+
+// a hazard in `lane` passing you right after you left that lane is a close call
+function passClose(o,lane,yy){
+  if(!o.chk&&yy<p.y+9){o.chk=true;if(p.lane!==lane&&p.prevLane===lane&&T-p.switchT<.6)close('CLOSE')}
+}
+// picks the lane to attack: usually yours, only if another lane stays climbable around height a..b
+function aimLane(a,b){
+  const ok=l=>[0,1,2].some(q=>q!==l&&clearAt(q,a,b));
+  const order=Math.random()<.65?[p.lane,...others(p.lane).sort(()=>Math.random()-.5)]:[r3(),0,1,2];
+  return order.find(ok)??-1;
+}
+
+function bladePos(o,t){const th=o.A*Math.sin(o.w*(t+o.ph));return [72+o.L*Math.sin(th),o.Py-o.L*Math.cos(th)]}
+const bladeHits=(bx,by,px,py,m=0)=>Math.abs(bx-px)<10+m&&Math.abs(by-(py+9))<13+m;
+// predicts your climb past the blade in each lane: needs a lane that's safe with room to spare, and a lane that gets hit
+function bladeFair(o,sp){
+  let safe=0,threat=0;
+  for(let l=0;l<3;l++){
+    if(!clearAt(l,o.y-24,o.y+30))continue;
+    let near=false,h=false;
+    for(let t=0;t<9;t+=.02){const py=p.y+sp*t;if(py>o.Py)break;const [bx,by]=bladePos(o,T+t);
+      if(bladeHits(bx,by,LX[l],py,6))near=true;if(bladeHits(bx,by,LX[l],py)){h=true;break}}
+    if(h)threat++;else if(!near)safe++;
+  }
+  return safe>0&&threat>0;
+}
+function wallExt(o){
+  const c=((T+o.ph)%o.per)/o.per;
+  return c<.35?0:c<.5?.06:c<.55?(c-.5)/.05:c<.9?1:c<.95?1-(c-.9)/.05:0;
+}
+
+const TR={
+  bats:{
+    start(o){
+      const vb=35+speed*.25,y0=camY+H+8,t=(y0-(p.y+9))/(vb+speed),ya=hands()+speed*t,lane=aimLane(ya-30,ya+20);
+      if(lane<0)return false;
+      Object.assign(o,{lane,x:LX[lane],y:y0,vb,n:2+(Math.random()<.3+diff(p.y)?1:0),homing:diff(p.y)>.25&&Math.random()<.5,turned:false});
+      snd(1500,900,.12,'square',.03);return true;
+    },
+    tick(o,dt){
+      o.y-=o.vb*dt;
+      // red bats swerve once toward your lane when they get close
+      if(o.homing&&!o.turned&&o.y-(p.y+9)<speed*.55+40){
+        o.turned=true;
+        if(p.lane!==o.lane){const nl=o.lane+Math.sign(p.lane-o.lane);if([0,1,2].some(q=>q!==nl&&clearAt(q,p.y,p.y+60))){o.lane=nl;snd(1800,1200,.1,'square',.03)}}
+      }
+      o.x+=(LX[o.lane]-o.x)*Math.min(1,dt*6);
+      for(let i=0;i<o.n;i++){const bx=o.x+[-4,4,0][i],by=o.y+[0,5,11][i];
+        if(!o.hitDone&&Math.abs(bx-p.x)<6&&by>p.y-1&&by<p.y+19){o.hitDone=true;hit()}}
+      passClose(o,o.lane,o.y);
+      if(o.y<camY-30)o.dead=true;
+    },
+    draw(o){const fr=(o.homing?BAT_RED:BAT)[(T*12|0)%2];
+      for(let i=0;i<o.n;i++)drawSpr(fr,o.x+[-4,4,0][i]-fr.w/2,sy(o.y+[0,5,11][i])-fr.h/2)},
+  },
+  snake:{
+    start(o){
+      const vs=18+speed*.12,y0=camY+H+4,t=(y0-(p.y+9))/(vs+speed),ya=hands()+speed*t,lane=aimLane(ya-30,ya+30);
+      if(lane<0)return false;
+      Object.assign(o,{lane,y:y0,vs});snd(200,120,.3,'sawtooth',.02);return true;
+    },
+    tick(o,dt){
+      o.y-=o.vs*dt;
+      for(let i=0;i<8;i++){const yy=o.y+i*3.5;
+        if(!o.hitDone&&Math.abs(LX[o.lane]-p.x)<6&&yy>p.y-1&&yy<p.y+19){o.hitDone=true;hit()}}
+      passClose(o,o.lane,o.y);
+      if(o.y+28<camY-10)o.dead=true;
+    },
+    draw(o){
+      for(let i=7;i>=1;i--){const y=sy(o.y+i*3.5),x=LX[o.lane]+Math.sin(T*8+i*.9)*2,r=i>5?2:2.75;
+        f(x-r-.5,y-2.25,r*2+1,4.5,'#291814');f(x-r,y-1.75,r*2,3.5,['r','y','#291814'][i%3]);f(x-r+.5,y-1.75,1.5,.5,'w')}
+      const x=LX[o.lane]+Math.sin(T*8)*2,y=sy(o.y);
+      f(x-3.25,y-3,6.5,6,'#291814');f(x-2.75,y-2.5,5.5,5,'r');f(x-2.25,y-2.5,3,1,'#ff6c24');
+      f(x-2,y-.5,1,1,'y');f(x+1,y-.5,1,1,'y');f(x-1.75,y-.5,.5,.5,'k');f(x+1.25,y-.5,.5,.5,'k');
+      if((T*6|0)%2){f(x-.25,y+3,.5,2,'#ff77a8');f(x-.75,y+5,.5,.5,'#ff77a8');f(x+.25,y+5,.5,.5,'#ff77a8')}
+    },
+  },
+  geyser:{
+    start(o){
+      const a=hands()+speed*.9,b=hands()+speed*1.75,lane=aimLane(a-18,b);
+      if(lane<0)return false;
+      Object.assign(o,{lane,st:'warn',t:0,top:lavaY});snd(70,50,.6,'sawtooth',.05);return true;
+    },
+    tick(o,dt){
+      o.t+=dt;
+      if(o.st==='warn'){
+        if(Math.random()<.4)parts.push({x:LX[o.lane]+Math.random()*8-4,y:Math.max(lavaY,camY)+2,vy:30+Math.random()*30,g:0,l:.5,c:Math.random()<.5?'o':'y'});
+        if(o.t>=.9){o.st='erupt';o.t=0;shake=Math.max(shake,2);snd(120,40,.7,'sawtooth',.08)}
+      } else if(o.st==='erupt'){
+        o.top=lavaY+(camY+H+10-lavaY)*Math.min(1,o.t/.15);
+        if(!o.hitDone&&p.y+2<o.top&&Math.abs(p.x-LX[o.lane])<7){o.hitDone=true;hit()}
+        if(o.t>=.8){o.st='end';o.t=0}
+      } else if(o.st==='end'){
+        o.top=lavaY+(camY+H+10-lavaY)*Math.max(0,1-o.t/.25);
+        if(o.t>=.25)o.dead=true;
+      }
+    },
+    draw(o){
+      const x=LX[o.lane];
+      if(o.st==='warn'){
+        const ly=Math.min(H,sy(lavaY)),on=(T*10|0)%2;
+        cx.globalAlpha=on?.28:.12;f(x-6,0,12,ly,'o');cx.globalAlpha=1;
+        for(let yy=ly-6;yy>0;yy-=8)f(x-.5,yy,1,3,on?'y':'o');
+        for(let i=0;i<5;i++)f(x-5+hash(i+(T*12|0))*10,ly-1.5-hash(i*7+(T*12|0))*6,1.5,1.5,i%2?'y':'o');
+        if(on)txt('!',x-1,Math.min(ly,H)-22,2,'y');
+        return;
+      }
+      const top=sy(o.top),bot=Math.min(H+2,sy(lavaY));
+      if(bot<=top)return;
+      for(let yy=Math.max(-2,top);yy<bot;yy+=.5){
+        const wv=Math.sin(yy*.4+T*30)+Math.sin(yy*.17-T*20)*.7,hw=5+wv*.5;
+        f(x-hw,yy,hw*2,.5,'r');f(x-hw*.65,yy,hw*1.3,.5,'o');f(x-hw*.25+wv*.3,yy,hw*.5,.5,'y');
+      }
+      if(top>-4){f(x-6,top-1.5,12,2,'o');f(x-4,top-3,8,1.5,'y');f(x-2,top-4,1,1,'y');f(x+2,top-4.5,1,1,'o')}
+    },
+  },
+  wall:{
+    tick(o){
+      const e=wallExt(o);
+      if(e>.6&&!o.hitDone&&p.y<o.y+o.len&&p.y+18>o.y){
+        const tipL=12+e*32,tipR=132-e*32;
+        if(((o.both||o.side<0)&&p.x-5<tipL)||((o.both||o.side>0)&&p.x+5>tipR)){o.hitDone=true;hit()}
+      }
+      if(e===1&&!o.snd&&Math.abs(o.y-p.y)<160){o.snd=true;snd(300,200,.06,'square',.02)}
+      if(e===0)o.snd=false;
+      if(o.y+o.len<camY-60)o.dead=true;
+    },
+    back(o){
+      const e=wallExt(o),rattle=e>0&&e<.1?(T*30|0)%2*.5:0;
+      for(const s of o.both?[-1,1]:[o.side]){
+        const L=s<0,base=L?8:132;
+        f(base,sy(o.y+o.len),4,o.len,'#3b3743');f(base,sy(o.y+o.len),4,.5,'#6a6472');
+        for(let k=0;k<6;k++){
+          const yc=sy(o.y+2+k*4),len=Math.max(1,e*32)+rattle;
+          for(let j=-1.5;j<=1.5;j+=.5){const l=len*(1-Math.abs(j)/2),c=j<0?'w':j<1?'l':'d';
+            if(L)f(12,yc+j,l,.5,c);else f(132-l,yc+j,l,.5,c)}
+        }
+      }
+    },
+  },
+  blade:{
+    tick(o){
+      const [bx,by]=bladePos(o,T);
+      if(!o.hitDone&&bladeHits(bx,by,p.x,p.y)){o.hitDone=true;hit()}
+      if(!o.chk&&p.y+9>by&&Math.abs(by-(p.y+9))<14){o.chk=true;if(!o.hitDone&&Math.abs(bx-p.x)<22)close('CLOSE')}
+      if(o.Py<camY-20)o.dead=true;
+    },
+    back(o){
+      const [bx,by]=bladePos(o,T),py=sy(o.Py);
+      f(12,py-3,120,3,'#4a4552');f(12,py-3,120,.5,'#6a6472');f(12,py-.5,120,.5,'#1a181f');
+      for(let i=0;i<=14;i++){const x=72+(bx-72)*i/14,y=o.Py+(by-o.Py)*i/14;f(x-.5,sy(y)-.5,1,1,i%2?'#5f574f':'#8a8590')}
+      f(70.5,py-1,3,3,'#2a2730');
+    },
+    draw(o){
+      const disc=(bx,by)=>{const y0=sy(by);
+        for(let dy=-6.5;dy<=6.5;dy+=.5){const w=Math.sqrt(42.25-dy*dy);f(bx-w,y0+dy,w*2,.5,dy>2.5?'w':dy>-1.5?'l':'#8a8590')}
+        for(let k=0;k<8;k++){const a=k*Math.PI/4+T*25;f(bx+Math.cos(a)*7-.5,y0+Math.sin(a)*7-.5,1,1,'l')}
+        f(bx-1.5,y0-1.5,3,3,'#2a2730');};
+      const [gx,gy]=bladePos(o,T-.05);cx.globalAlpha=.25;disc(gx,gy);cx.globalAlpha=1;
+      const [bx,by]=bladePos(o,T);disc(bx,by);
+    },
+  },
+};
 
 // spike waves (Jetpack Joyride style): drops one after another, single lanes and pairs, always one lane open.
 // each drop shows its own "!" for SPIKE_WARN seconds before it falls.
@@ -376,7 +578,12 @@ function update(dt){
     if(p.y-lavaY>110)lavaY=p.y-110;
 
     while(genY<p.y+300)placeSection();
-    while(nextY<p.y+230){const w=spawnAt(nextY);nextY+=170-90*diff(nextY)+Math.random()*60+w*spAt(nextY)*1.6}
+    while(nextY<p.y+230){const w=spawnAt(nextY);nextY+=170-90*diff(nextY)+Math.random()*60+w*spAt(nextY)}
+    for(const o of traps){
+      if(o.st==='wait'){if(p.y>=o.ty){if(TR[o.type].start(o))o.st=o.st==='wait'?'on':o.st;else o.dead=true}}
+      else TR[o.type].tick(o,dt);
+    }
+    traps=traps.filter(o=>!o.dead);
     for(const w of waves)if(p.y>=w.ty){w.done=true;fireWave()}
     waves=waves.filter(w=>!w.done);
 
@@ -513,7 +720,7 @@ function drawLava(){
     for(let r=6;r<10;r+=.5)if((i+r*2)&1)f(x,top+r,.5,.5,'r');
     f(x,top+10,.5,12,'r');
     for(let r=22;r<26;r+=.5)if((i+r*2)&1)f(x,top+r,.5,.5,'#be1250');
-    f(x,top+26,.5,H,'#be1250');
+    f(x,top+26,.5,Math.max(0,H-top-26)+2,'#be1250');
   }
   for(const b of bubbles){const by=ly+4+((b.x*7)%30);if(by<H){f(b.x,by,1.5,1.5,b.l>.2?'y':'o');f(b.x+.5,by+.5,.5,.5,'w')}}
 }
@@ -535,6 +742,9 @@ function drawObstacles(){
     if(j.st==='warn'&&(T*8|0)%2){const a=L?14:j.reach,b=L?j.reach:130;for(let x=a;x<b;x+=3)f(x,ys,1.5,.5,'r')}
   }
 }
+
+function drawTrapsBack(){for(const o of traps)if(o.st!=='wait'&&TR[o.type].back)TR[o.type].back(o)}
+function drawTrapsFront(){for(const o of traps)if(o.st!=='wait'&&TR[o.type].draw)TR[o.type].draw(o)}
 
 function drawFlames(){
   for(const j of jets){
@@ -599,7 +809,7 @@ function drawHud(){
 function draw(){
   cx.save();
   if(shake>0)cx.translate(Math.round((Math.random()-.5)*shake)*S,Math.round((Math.random()-.5)*shake)*S);
-  drawBg();drawVines();drawObstacles();drawPlayer();drawFlames();drawLava();
+  drawBg();drawVines();drawTrapsBack();drawObstacles();drawPlayer();drawFlames();drawTrapsFront();drawLava();
   cx.restore();
   drawHud();
 }

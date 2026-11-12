@@ -11,11 +11,16 @@ A retro pixel endless climber. Lava is rising. Climb or burn.
 
 ## Watch out for
 - **Broken vines**: climb into a gap and you fall
-- **Fragile vines** (brown): you get 2 seconds before they snap
-- **Falling spikes**: a `!` warns which lane
-- **Darts**: wall traps blink, then fire at your lane
+- **Fragile vines** (brown): you get 2 seconds before they snap, so jump off in time
+- **Spike waves**: a `!` warns each lane, one or two lanes at a time
+- **Fire jets**: a wall vent glows, then blasts fire across 1-2 lanes
+- **Lava geysers**: a lane glows, then lava erupts up the whole lane
+- **Bats**: fly down a lane at you; red ones swerve toward you
+- **Swinging buzzsaws**: time which lane you're in as it swings past
+- **Wall spikes**: shoot out over the outer lanes
+- **Snakes**: slither down a vine toward you
 
-Hits stun you and let the lava catch up.
+Hits stun you and let the lava catch up. It keeps getting faster.
 
 ## Scoring
 Height + bonus points for close calls:

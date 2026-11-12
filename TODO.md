@@ -12,6 +12,10 @@ Add, remove or reorder anything. Check items off with [x].
 - [x] Hand-made sections (Subway Surfers style) instead of random rows; fragile bridges and jump-offs
 - [x] Speed keeps ramping for ~3 minutes, then levels off
 - [x] Hits could knock you back into a gap you just passed (unfair death)
+- [x] Faster (Jetpack Joyride feel), fragile bridges removed
+- [x] Spike waves: single and double-lane drops in sequence
+- [x] New traps: lava geyser, bats (red ones swerve), swinging buzzsaw, wall spikes, snake
+- [x] Staircase section was too tight at high speed (~0.13s to switch)
 - [ ] Playtest difficulty curve on a real phone (gaps/jets/spikes frequency)
 
 ## Feel / UX
