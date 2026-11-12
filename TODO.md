@@ -25,6 +25,9 @@ Add, remove or reorder anything. Check items off with [x].
 - [x] Traps evolve into patterns: geyser sweep/squeeze/double, twin saws, spike stairs, crossing bats
 - [x] Traps check each other so they never stack into a no-escape spot; fragile never on your only way through
 
+- [x] Friend feedback: multi-swipe removed; two-vine breaks never stop at the same height;
+      traps don't chase you into the lane you just escaped to; spikes fall a bit slower
+
 ## Next (after core feels right)
 - [ ] Gem trails along the safe lines (reward + guide, like coins)
 - [ ] Shield charm (one free hit/fall), then rope/grapple, magnet, x2

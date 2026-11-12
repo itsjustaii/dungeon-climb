@@ -254,28 +254,35 @@ const warnK=()=>1.35-.75*diff(p.y);
 const FRAG=.9; // fragile vines snap this many seconds after you grab them
 
 // hand-made sections stitched together (Subway Surfers style). m() mirrors lanes left/right.
-// c: sp speed, d difficulty, g gap length, S row spacing (the window between rows shrinks with speed)
+// c: sp speed, d difficulty, g gap length, W window between rows (shrinks with speed), S = g+W
 const G=(l,a,b)=>segs.push({lane:l,type:'G',y0:a,y1:b});
 const Fv=(l,a,b)=>segs.push({lane:l,type:'F',y0:a,y1:b,t:-1,broken:false});
 const others=o=>[0,1,2].filter(l=>l!==o);
-const rows=(y,S,g,open)=>{open.forEach((o,i)=>{for(const l of others(o))G(l,y+i*S,y+i*S+g)});return S*(open.length-1)+g};
+// breaks one or two vines starting at y. two breaks start together (so you see both at once and pick the open
+// vine), but never stop at the same height, so it doesn't read as a wall. returns where the last break ends.
+function block(lanes,y,g){
+  if(lanes.length===1){G(lanes[0],y,y+g);return y+g}
+  const d2=10+Math.random()*8,g2=g>=40&&Math.random()<.5?g-d2:g+d2,off=Math.random()*3;
+  G(lanes[0],y,y+g);G(lanes[1],y+off,y+off+g2);return Math.max(y+g,y+off+g2);
+}
+// rows of breaks leaving open[i] open each time, with a window W after each row ends
+const seq=(y,W,g,blocked)=>{let yy=y;for(const ls of blocked)yy=block(ls,yy,g)+W;return yy-W-y};
+const rows=(y,W,g,open)=>seq(y,W,g,open.map(others));
 // tiers: d = difficulty when the section unlocks; w = weight when it unlocks -> weight at max difficulty.
 // early on you only get single isolated gaps; combos come in as you climb.
 const SECTIONS=[
   {d:0,w:[3,.2],f:(y,m,c)=>{G(r3(),y,y+c.g);return c.g}},
   {d:0,w:[1.5,.1],f:(y,m,c)=>20+Math.random()*30*(1-c.d)},
-  {d:.03,w:[3,1.2],f:(y,m,c)=>rows(y,c.S,c.g,[r3()])},
+  {d:.03,w:[3,1.2],f:(y,m,c)=>rows(y,c.W,c.g,[r3()])},
   {d:.05,w:[2,1.2],f:(y,m,c)=>{const st=c.g+Math.max(18,c.sp*(.36-.08*c.d));for(let i=0;i<3;i++)G(m(i),y+i*st,y+i*st+c.g);return st*2+c.g}},
-  {d:.05,w:[1.5,.8],f:(y,m,c)=>{const o=Math.random()<.5?1:m(0),len=c.S*1.6;for(const l of others(o))G(l,y,y+len);return len}},
-  {d:.12,w:[2,3],f:(y,m,c)=>rows(y,c.S,c.g,[m(0),m(1),m(2)])},
-  {d:.12,w:[1.5,2],f:(y,m,c)=>{const a=r3();return rows(y,c.S,c.g,[a,a===1?m(0):1])}},
+  {d:.05,w:[1.5,.8],f:(y,m,c)=>{const o=Math.random()<.5?1:m(0);return block(others(o),y,c.S*1.6)-y}},
+  {d:.12,w:[2,3],f:(y,m,c)=>rows(y,c.W,c.g,[m(0),m(1),m(2)])},
+  {d:.12,w:[1.5,2],f:(y,m,c)=>{const a=r3();return rows(y,c.W,c.g,[a,a===1?m(0):1])}},
   // checker: middle open, then sides open, then middle...
-  {d:.2,w:[1.5,2],f:(y,m,c)=>{const n=3+(Math.random()<c.d?1:0);
-    for(let i=0;i<n;i++)if(i%2)G(1,y+i*c.S,y+i*c.S+c.g);else{G(0,y+i*c.S,y+i*c.S+c.g);G(2,y+i*c.S,y+i*c.S+c.g)}
-    return c.S*(n-1)+c.g}},
-  {d:.35,w:[1.5,2.5],f:(y,m,c)=>rows(y,c.S,c.g,[m(0),m(1),m(0),m(1)])},
+  {d:.2,w:[1.5,2],f:(y,m,c)=>{const n=3+(Math.random()<c.d?1:0),b=[];for(let i=0;i<n;i++)b.push(i%2?[1]:[0,2]);return seq(y,c.W,c.g,b)}},
+  {d:.35,w:[1.5,2.5],f:(y,m,c)=>rows(y,c.W,c.g,[m(0),m(1),m(0),m(1)])},
   // crossfire: open lane jumps from one side to the other (needs a double swipe, so the window is wider)
-  {d:.35,w:[1,2],f:(y,m,c)=>rows(y,c.g+Math.max(30,c.sp*(.5-.1*c.d)),c.g,[m(0),m(2)])},
+  {d:.35,w:[1,2],f:(y,m,c)=>rows(y,Math.max(30,c.sp*(.5-.1*c.d)),c.g,[m(0),m(2)])},
 ];
 // fast-crumbling fragile pieces mixed into the layout; short enough to climb over unless you get stunned on one
 function sprinkleFragile(a,b,sp,d){
@@ -288,11 +295,11 @@ function sprinkleFragile(a,b,sp,d){
   }
 }
 function placeSection(){
-  const y=genY,d=diff(y),sp=spAt(y),g=Math.round((14+Math.random()*6)*Math.max(1,sp/60)+d*4),S=g+Math.max(20,sp*(.42-.12*d));
+  const y=genY,d=diff(y),sp=spAt(y),g=Math.round((14+Math.random()*6)*Math.max(1,sp/60)+d*4),W=Math.max(20,sp*(.42-.12*d)),S=g+W;
   const ok=SECTIONS.filter(s=>d>=s.d),wt=s=>s.w[0]+(s.w[1]-s.w[0])*Math.min(1,(d-s.d)/(1-s.d));
   let r=Math.random()*ok.reduce((t,s)=>t+wt(s),0),sec=ok[0];
   for(const s of ok)if((r-=wt(s))<=0){sec=s;break}
-  const flip=Math.random()<.5,len=sec.f(y,l=>flip?2-l:l,{sp,d,g,S});
+  const flip=Math.random()<.5,len=sec.f(y,l=>flip?2-l:l,{sp,d,g,S,W});
   // breathing room between sections: wide during the warm-up, still enough for a double swipe at top speed
   genY=y+len+(y<WARM?60+Math.random()*30:Math.max(16,sp*(.5-.2*d))+Math.random()*8);
   if(y>WARM+200)sprinkleFragile(y-10,genY,sp,d);
@@ -432,6 +439,8 @@ function passClose(o,lane,yy){
 // picks the lane to attack: usually yours, only if another lane stays climbable around height a..b
 function aimLane(a,b){
   const ok=l=>[0,1,2].some(q=>q!==l&&gapFree(q,a,b+speed*.35));
+  // never aim at a lane you just switched into: that's the lane you escaped to
+  if(T-p.switchT<.6)return [p.prevLane,...others(p.lane).filter(l=>l!==p.prevLane)].find(ok)??-1;
   const order=Math.random()<.65?[p.lane,...others(p.lane).sort(()=>Math.random()-.5)]:[r3(),0,1,2];
   return order.find(ok)??-1;
 }
@@ -675,12 +684,13 @@ const TR={
 // spike waves (Jetpack Joyride style): drops one after another, always one lane open.
 // patterns: "mixed" singles and pairs, and later "stairs" that sweep across the lanes in a quick rhythm.
 // each drop shows its own "!" for sw seconds before it falls; sw shrinks as you climb.
-const spikeV=()=>140+speed*.6;
+const spikeV=()=>115+speed*.6;
 const spikeEta=delay=>delay+(H-82)/(spikeV()+speed);
 function fireWave(){
   const d=diff(p.y),sw=.75*warnK(),stairs=d>.15&&Math.random()<.4;
   const n=stairs?3:1+Math.floor(Math.random()*(1.6+d*2.6)),gapT=stairs?.34-.1*d:.55-.2*d;
-  const order=p.lane===1?(Math.random()<.5?[0,1,2]:[2,1,0]):p.lane===0?[0,1,2]:[2,1,0];
+  // stairs sweep toward you from the far side, so the lane you dodge into has already been cleared
+  const order=p.lane===1?(Math.random()<.5?[0,1,2]:[2,1,0]):p.lane===0?[2,1,0]:[0,1,2];
   let open=p.lane;
   for(let i=0;i<n;i++){
     const delay=sw+i*gapT,ya=hands()+speed*spikeEta(delay);
@@ -695,9 +705,13 @@ function fireWave(){
       const near=path.filter(l=>Math.abs(l-open)<=1),pool=near.length?near:path,o=pool[Math.random()*pool.length|0];
       lanes=others(o);open=o;
     } else {
-      const tgt=i===0?p.lane:open;
+      // the first drop goes for your lane (or the one you just left); later drops never go for the lane you dodge into
+      let tgt;
+      if(i===0)tgt=T-p.switchT<.6?p.prevLane:p.lane;
+      else{const c=others(open);tgt=c[Math.random()*c.length|0]}
       if(!path.some(l=>l!==tgt))continue;
-      lanes=[tgt];open=path.filter(l=>l!==tgt).sort((a,b)=>Math.abs(a-tgt)-Math.abs(b-tgt))[0];
+      lanes=[tgt];
+      if(i===0)open=path.filter(l=>l!==tgt).sort((a,b)=>Math.abs(a-tgt)-Math.abs(b-tgt))[0];
     }
     for(const l of lanes)spikes.push({st:'warn',w:delay,sw,lane:l,y:0});
   }
@@ -981,8 +995,7 @@ addEventListener('resize',fit);fit();
 let down=false,sx0=0,swiped=false;
 const stage=document.getElementById('stage');
 stage.addEventListener('pointerdown',e=>{unlock();down=true;swiped=false;sx0=e.clientX});
-// one drag can switch several lanes: each further 20px of travel counts as another swipe
-stage.addEventListener('pointermove',e=>{if(down&&Math.abs(e.clientX-sx0)>20){move(e.clientX>sx0?1:-1);sx0=e.clientX;swiped=true}});
+stage.addEventListener('pointermove',e=>{if(down&&!swiped&&Math.abs(e.clientX-sx0)>22){move(e.clientX>sx0?1:-1);swiped=true}});
 addEventListener('pointerup',()=>{if(down&&!swiped)tap();down=false});
 addEventListener('keydown',e=>{
   unlock();
