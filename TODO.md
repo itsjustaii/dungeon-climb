@@ -20,7 +20,17 @@ Add, remove or reorder anything. Check items off with [x].
 - [x] Fragile vines mixed into layouts, crumble 0.9s after grab (jump-off section removed)
 - [x] Bats swoop diagonally in waves; coiled striking snake + dropping snake
 - [x] Trap deck: every trap type comes up regularly, new ones introduced one at a time
-- [ ] Buzzsaw sometimes shows up late (it needs a fair spot to swing)
+- [x] Core feel pass (Subway Surfers / Jetpack Joyride research): slow 10s warm-up then steep ramp, chunk tiers,
+      warnings shrink as you climb, multi-swipe in one drag
+- [x] Traps evolve into patterns: geyser sweep/squeeze/double, twin saws, spike stairs, crossing bats
+- [x] Traps check each other so they never stack into a no-escape spot; fragile never on your only way through
+
+## Next (after core feels right)
+- [ ] Gem trails along the safe lines (reward + guide, like coins)
+- [ ] Shield charm (one free hit/fall), then rope/grapple, magnet, x2
+- [ ] A "vehicle" moment (mine cart / bat ride)
+- [ ] Height zones with new scenery (dungeon -> crystal mine -> lava forge -> frozen depths)
+- [ ] Before launch: gem shop, outfits, gadgets, missions + ranks, end-of-run spin, daily reward
 - [ ] Playtest difficulty curve on a real phone (gaps/jets/spikes frequency)
 
 ## Feel / UX

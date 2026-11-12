@@ -24,6 +24,7 @@ const W=144,H=256,cv=document.getElementById('g'),cx=cv.getContext('2d'),wrap=do
 // PICO-8 style palette
 const P={k:'#000000',n:'#1d2b53',u:'#7e2553',g:'#008751',h:'#ab5236',d:'#5f574f',l:'#c2c3c7',w:'#fff1e8',r:'#ff004d',o:'#ffa300',y:'#ffec27',G:'#00e436',b:'#29adff',v:'#83769c',s:'#ffccaa'};
 const LX=[40,72,104];
+const WARM=400; // height of the slow, sparse warm-up at the start of a run
 
 // explorer: authored at 16x24, upscaled 1.5x (Scale3x then halved) to 24x36 fine px = 12x18 world, auto outline
 const SPC={o:'#291814',H:'#ab5236',h:'#742f29',d:'#5a3a22',s:'#ffccaa',z:'#e0a07a',B:'#29adff',b:'#065ab5',n:'#c9a66b',N:'#8a6a45',p:'#5f574f',P:'#3a3438',w:'#5a3a22'};
@@ -231,7 +232,7 @@ let state='title',T=0,p,camY,lavaY,spikes,waves,jets,traps,deck,known,lastKind,s
 function reset(){
   p={lane:1,x:-6,y:0,stun:0,inv:0,anim:0,vy:0,prevLane:1,switchT:-9};
   camY=-20;lavaY=-24;spikes=[];waves=[];jets=[];traps=[];deck=[];known=new Set();lastKind=null;segs=[];genY=90;bubbles=[];parts=[];pops=[];
-  nextY=200;it=0;playT=0;deadT=0;speed=60;shake=0;newBest=false;bonus=0;combo=0;comboT=-9;closes=0;
+  nextY=WARM+100;it=0;playT=0;deadT=0;speed=42;shake=0;newBest=false;bonus=0;combo=0;comboT=-9;closes=0;
 }
 reset();
 
@@ -245,9 +246,11 @@ const curY=()=>state==='dead'?deadY:p.y;
 const height=()=>Math.max(0,Math.floor(curY()/8));
 const score=()=>height()+bonus;
 
-// starts fast, ~100 within the first minute, keeps creeping up to 140
-const spAt=y=>Math.min(140,60+80*(1-Math.exp(-y/7000)));
-const diff=y=>Math.min(1,y/12000);
+// slow, sparse warm-up for the first ~10s (learn the swipes), then a steep ramp: ~90 at one minute, creeping toward 140
+const spAt=y=>Math.min(140,42+98*(1-Math.exp(-Math.max(0,y-WARM)/4500)));
+const diff=y=>Math.min(1,Math.max(0,y-WARM)/11000);
+// warning times start generous and shrink as you climb (1.35x at the start, 0.6x at the top)
+const warnK=()=>1.35-.75*diff(p.y);
 const FRAG=.9; // fragile vines snap this many seconds after you grab them
 
 // hand-made sections stitched together (Subway Surfers style). m() mirrors lanes left/right.
@@ -256,39 +259,43 @@ const G=(l,a,b)=>segs.push({lane:l,type:'G',y0:a,y1:b});
 const Fv=(l,a,b)=>segs.push({lane:l,type:'F',y0:a,y1:b,t:-1,broken:false});
 const others=o=>[0,1,2].filter(l=>l!==o);
 const rows=(y,S,g,open)=>{open.forEach((o,i)=>{for(const l of others(o))G(l,y+i*S,y+i*S+g)});return S*(open.length-1)+g};
+// tiers: d = difficulty when the section unlocks; w = weight when it unlocks -> weight at max difficulty.
+// early on you only get single isolated gaps; combos come in as you climb.
 const SECTIONS=[
-  {w:[1,.2],f:(y,m,c)=>{G(r3(),y,y+c.g);return c.g}},
-  {w:[3,1.5],f:(y,m,c)=>rows(y,c.S,c.g,[r3()])},
-  {w:[2,1.5],f:(y,m,c)=>{const st=c.g+Math.max(18,c.sp*(.36-.08*c.d));for(let i=0;i<3;i++)G(m(i),y+i*st,y+i*st+c.g);return st*2+c.g}},
-  {w:[1.5,1],f:(y,m,c)=>{const o=Math.random()<.5?1:m(0),len=c.S*1.6;for(const l of others(o))G(l,y,y+len);return len}},
-  {w:[2,3],minY:150,f:(y,m,c)=>rows(y,c.S,c.g,[m(0),m(1),m(2)])},
-  {w:[1,2.5],minY:1200,f:(y,m,c)=>rows(y,c.S,c.g,[m(0),m(1),m(0),m(1)])},
-  {w:[1.5,2],minY:300,f:(y,m,c)=>{const a=r3();return rows(y,c.S,c.g,[a,a===1?m(0):1])}},
+  {d:0,w:[3,.2],f:(y,m,c)=>{G(r3(),y,y+c.g);return c.g}},
+  {d:0,w:[1.5,.1],f:(y,m,c)=>20+Math.random()*30*(1-c.d)},
+  {d:.03,w:[3,1.2],f:(y,m,c)=>rows(y,c.S,c.g,[r3()])},
+  {d:.05,w:[2,1.2],f:(y,m,c)=>{const st=c.g+Math.max(18,c.sp*(.36-.08*c.d));for(let i=0;i<3;i++)G(m(i),y+i*st,y+i*st+c.g);return st*2+c.g}},
+  {d:.05,w:[1.5,.8],f:(y,m,c)=>{const o=Math.random()<.5?1:m(0),len=c.S*1.6;for(const l of others(o))G(l,y,y+len);return len}},
+  {d:.12,w:[2,3],f:(y,m,c)=>rows(y,c.S,c.g,[m(0),m(1),m(2)])},
+  {d:.12,w:[1.5,2],f:(y,m,c)=>{const a=r3();return rows(y,c.S,c.g,[a,a===1?m(0):1])}},
   // checker: middle open, then sides open, then middle...
-  {w:[1,2],minY:400,f:(y,m,c)=>{const n=3+(Math.random()<c.d?1:0);
+  {d:.2,w:[1.5,2],f:(y,m,c)=>{const n=3+(Math.random()<c.d?1:0);
     for(let i=0;i<n;i++)if(i%2)G(1,y+i*c.S,y+i*c.S+c.g);else{G(0,y+i*c.S,y+i*c.S+c.g);G(2,y+i*c.S,y+i*c.S+c.g)}
     return c.S*(n-1)+c.g}},
+  {d:.35,w:[1.5,2.5],f:(y,m,c)=>rows(y,c.S,c.g,[m(0),m(1),m(0),m(1)])},
   // crossfire: open lane jumps from one side to the other (needs a double swipe, so the window is wider)
-  {w:[.5,2],minY:600,f:(y,m,c)=>rows(y,c.g+Math.max(30,c.sp*(.5-.1*c.d)),c.g,[m(0),m(2)])},
-  {w:[.6,.1],f:(y,m,c)=>20+Math.random()*30*(1-c.d)},
+  {d:.35,w:[1,2],f:(y,m,c)=>rows(y,c.g+Math.max(30,c.sp*(.5-.1*c.d)),c.g,[m(0),m(2)])},
 ];
 // fast-crumbling fragile pieces mixed into the layout; short enough to climb over unless you get stunned on one
 function sprinkleFragile(a,b,sp,d){
   for(let l=0;l<3;l++){
-    if(Math.random()>.15+.3*d)continue;
+    if(Math.random()>.3+.35*d)continue;
     const len=sp*(.55+Math.random()*.2);
-    for(let k=0;k<6;k++){const y0=a+Math.random()*Math.max(0,b-a-len);if(clearAt(l,y0-6,y0+len+6)){Fv(l,y0,y0+len);break}}
+    // never on your only way through: somewhere alongside it there must always be another lane without a gap
+    const alt=y0=>{for(let y=y0-10;y<=y0+len+10;y+=6)if(!others(l).some(q=>!segs.some(s=>s.lane===q&&s.type==='G'&&s.y0<y+6&&s.y1>y-6)))return false;return true};
+    for(let k=0;k<10;k++){const y0=a+Math.random()*Math.max(0,b-a-len);if(clearAt(l,y0-6,y0+len+6)&&alt(y0)){Fv(l,y0,y0+len);break}}
   }
 }
 function placeSection(){
   const y=genY,d=diff(y),sp=spAt(y),g=Math.round((14+Math.random()*6)*Math.max(1,sp/60)+d*4),S=g+Math.max(20,sp*(.42-.12*d));
-  const ok=SECTIONS.filter(s=>y>=(s.minY||0)),wt=s=>s.w[0]+(s.w[1]-s.w[0])*d;
+  const ok=SECTIONS.filter(s=>d>=s.d),wt=s=>s.w[0]+(s.w[1]-s.w[0])*Math.min(1,(d-s.d)/(1-s.d));
   let r=Math.random()*ok.reduce((t,s)=>t+wt(s),0),sec=ok[0];
   for(const s of ok)if((r-=wt(s))<=0){sec=s;break}
   const flip=Math.random()<.5,len=sec.f(y,l=>flip?2-l:l,{sp,d,g,S});
-  // breathing room between sections: still enough for a double swipe at top speed
-  genY=y+len+Math.max(16,sp*(.5-.2*d))+Math.random()*8;
-  if(y>120)sprinkleFragile(y-10,genY,sp,d);
+  // breathing room between sections: wide during the warm-up, still enough for a double swipe at top speed
+  genY=y+len+(y<WARM?60+Math.random()*30:Math.max(16,sp*(.5-.2*d))+Math.random()*8);
+  if(y>WARM+200)sprinkleFragile(y-10,genY,sp,d);
 }
 
 function close(label){
@@ -330,24 +337,37 @@ function hit(){
 // never placed so that every uncovered lane has a gap at that height.
 const jetLanes=(side,n)=>(side<0?[0,1]:[2,1]).slice(0,n);
 const clearAt=(l,a,b)=>!segs.some(s=>s.lane===l&&s.y0<b&&s.y1>a);
-// an escape lane only needs to be free of gaps: sitting on a fragile piece is fine while nothing hits you there
-const gapFree=(l,a,b)=>!segs.some(s=>s.lane===l&&s.type==='G'&&s.y0<b&&s.y1>a);
+// is lane l (between heights a..b) already covered by another trap that's set up or going off?
+function laneThreat(l,a,b){
+  for(const o of traps){
+    if(o.st==='wait'||o.dead)continue;
+    if(o.type==='wall'&&o.y<b&&o.y+o.len>a&&((o.both||o.side<0)&&l===0||(o.both||o.side>0)&&l===2))return true;
+    if(o.type==='geyser'&&o.steps&&o.steps.some(s=>s.ph!=='done'&&s.lanes.includes(l)))return true;
+    if(o.type==='coil'&&o.y<b+20&&o.y>a-20&&(o.lane===l||(o.dir&&o.lane+o.dir===l)))return true;
+    if(o.type==='blade'&&o.y-10<b&&o.Py-25>a)return true;
+  }
+  return jets.some(j=>j.st!=='done'&&j.lanes.includes(l)&&j.y>a-6&&j.y<b+6);
+}
+// an escape lane must be free of gaps and other traps: sitting on a fragile piece is fine while nothing hits you there
+const gapFree=(l,a,b)=>!segs.some(s=>s.lane===l&&s.type==='G'&&s.y0<b&&s.y1>a)&&!laneThreat(l,a,b);
+// triggered traps start this far below their spot so they go off around where the spawner placed them
+const trig=y=>Math.max(150,spAt(y)*1.4);
 
 // each spawner returns seconds of travel to keep free after it (so traps don't stack),
 // or null if it couldn't be placed fairly.
 const SPAWN={
-  wave:y=>{waves.push({ty:y-150});return 1.6},
+  wave:y=>{waves.push({ty:y-trig(y)});return 1.6},
   jet:y=>{
-    const ok=(side,n)=>{const cov=jetLanes(side,n);return [0,1,2].some(l=>!cov.includes(l)&&gapFree(l,y-24,y+20))};
+    const ok=(side,n)=>{const cov=jetLanes(side,n);return [0,1,2].some(l=>!cov.includes(l)&&gapFree(l,y-24,y+20+spAt(y)*.35))};
     let side=Math.random()<.5?-1:1,n=Math.random()<.2+.5*diff(y)?2:1;
     if(!ok(side,n)){if(ok(-side,n))side=-side;else if(ok(side,1))n=1;else if(ok(-side,1)){side=-side;n=1}else return null}
     jets.push({st:'idle',y,side,lanes:jetLanes(side,n),reach:side<0?LX[n-1]+6:LX[3-n]-6,t:0});return 0;
   },
-  drop:y=>{traps.push({type:'drop',st:'wait',ty:y-150});return .9},
+  drop:y=>{traps.push({type:'drop',st:'wait',ty:y-trig(y)});return .9},
   coil:y0=>{
     for(const y of [y0,y0+25,y0+50])for(const lane of [0,1,2].sort(()=>Math.random()-.5)){
       const need=lane===1?[0,2]:[lane===0?2:0];
-      if(need.every(l=>gapFree(l,y-20,y+20))){
+      if(need.every(l=>gapFree(l,y-20,y+20+spAt(y)*.35))){
         // the snake sits on solid vine: clear whatever was under it (only ever makes the layout easier)
         segs=segs.filter(s=>!(s.lane===lane&&s.y0<y+14&&s.y1>y-6));
         traps.push({type:'coil',st:'idle',y,lane,t:0});return .5;
@@ -355,25 +375,28 @@ const SPAWN={
     }
     return null;
   },
-  bats:y=>{traps.push({type:'bats',st:'wait',ty:y-150});return 2},
-  geyser:y=>{traps.push({type:'geyser',st:'wait',ty:y-150});return 1.4},
+  bats:y=>{traps.push({type:'bats',st:'wait',ty:y-trig(y)});return 2},
+  geyser:y=>{traps.push({type:'geyser',st:'wait',ty:y-trig(y)});return 1.4},
   wall:y=>{
     const d=diff(y),both=d>.4&&Math.random()<.35,side=Math.random()<.5?-1:1,len=24;
     const cov=both?[0,2]:[side<0?0:2];
     if(![0,1,2].some(l=>!cov.includes(l)&&gapFree(l,y-20,y+len+20)))return null;
     traps.push({type:'wall',st:'on',y,len,side,both,per:1.3-.3*d,ph:Math.random()*2});return .5;
   },
+  // later on, two saws hung one above the other swing out of sync
   blade:y0=>{
+    const twin=diff(y0)>.35&&Math.random()<.5;
     for(const y of [y0,y0+30,y0+60]){
-      const o={type:'blade',st:'on',y,Py:y+55,L:55,A:.8,w:2*Math.PI/1.9,ph:0},sp=spAt((p.y+y)/2);
-      for(let k=0;k<20;k++){o.ph=Math.random()*1.9;if(bladeFair(o,sp)){traps.push(o);return .6}}
+      const sp=spAt((p.y+y)/2),mk=yy=>({type:'blade',st:'on',y:yy,Py:yy+55,L:55,A:.8,w:2*Math.PI/(twin?1.6:1.9),ph:0});
+      const os=twin?[mk(y),mk(y+42)]:[mk(y)];
+      for(let k=0;k<25;k++){for(const o of os)o.ph=Math.random()*2;if(bladeFair(os,sp)){traps.push(...os);return twin?1:.6}}
     }
     return null;
   },
 };
 // traps come from a shuffled deck so every unlocked type shows up regularly; a newly unlocked type comes next.
 // unlock heights in world units (8 per metre): everything is in by ~55m
-const UNLOCK={wave:0,drop:0,coil:60,jet:100,bats:180,wall:260,geyser:340,blade:440};
+const UNLOCK={wave:0,drop:WARM+80,coil:WARM+180,jet:WARM+300,bats:WARM+450,wall:WARM+600,geyser:WARM+750,blade:WARM+950};
 function nextKinds(y){
   const un=Object.keys(UNLOCK).filter(k=>y>=UNLOCK[k]),fresh=un.filter(k=>!known.has(k));
   if(!deck.length){deck=[...un,'wave'].sort(()=>Math.random()-.5);if(deck[0]===lastKind)deck.push(deck.shift())}
@@ -408,21 +431,23 @@ function passClose(o,lane,yy){
 }
 // picks the lane to attack: usually yours, only if another lane stays climbable around height a..b
 function aimLane(a,b){
-  const ok=l=>[0,1,2].some(q=>q!==l&&gapFree(q,a,b));
+  const ok=l=>[0,1,2].some(q=>q!==l&&gapFree(q,a,b+speed*.35));
   const order=Math.random()<.65?[p.lane,...others(p.lane).sort(()=>Math.random()-.5)]:[r3(),0,1,2];
   return order.find(ok)??-1;
 }
 
 function bladePos(o,t){const th=o.A*Math.sin(o.w*(t+o.ph));return [72+o.L*Math.sin(th),o.Py-o.L*Math.cos(th)]}
 const bladeHits=(bx,by,px,py,m=0)=>Math.abs(bx-px)<10+m&&Math.abs(by-(py+9))<13+m;
-// predicts your climb past the blade in each lane: needs a lane that's safe with room to spare, and a lane that gets hit
-function bladeFair(o,sp){
+// predicts your climb past the blade(s) in each lane: needs a lane that's safe from all of them with room to spare,
+// and a lane that gets hit
+function bladeFair(os,sp){
   let safe=0,threat=0;
+  const lo=Math.min(...os.map(o=>o.y)),top=Math.max(...os.map(o=>o.Py));
   for(let l=0;l<3;l++){
-    if(!gapFree(l,o.y-24,o.y+30))continue;
+    if(!gapFree(l,lo-24,top-25))continue;
     let near=false,h=false;
-    for(let t=0;t<9;t+=.02){const py=p.y+sp*t;if(py>o.Py)break;const [bx,by]=bladePos(o,T+t);
-      if(bladeHits(bx,by,LX[l],py,6))near=true;if(bladeHits(bx,by,LX[l],py)){h=true;break}}
+    for(let t=0;t<9&&!h;t+=.02){const py=p.y+sp*t;if(py>top)break;
+      for(const o of os){const [bx,by]=bladePos(o,T+t);if(bladeHits(bx,by,LX[l],py,6))near=true;if(bladeHits(bx,by,LX[l],py))h=true}}
     if(h)threat++;else if(!near)safe++;
   }
   return safe>0&&threat>0;
@@ -446,7 +471,7 @@ const TR={
   bats:{
     start(o){
       const d=diff(p.y),n=2+(d>.3?1:0)+(Math.random()<d?1:0),gap=.6-.15*d;
-      o.sw=[];for(let i=0;i<n;i++)o.sw.push({t0:i*gap,st:'pending',red:d>.4&&Math.random()<.4});
+      o.sw=[];for(let i=0;i<n;i++)o.sw.push({t0:i*gap,st:'pending',red:d>.4&&Math.random()<.4,cross:d>.35&&Math.random()<.4});
       o.t=0;return true;
     },
     tick(o,dt){
@@ -454,9 +479,20 @@ const TR={
       for(const s of o.sw){
         if(s.st==='pending'&&o.t>=s.t0){
           s.vb=(40+speed*.2)*(s.red?1.4:1);
-          const tm=(H-73)/(s.vb+speed),ya=hands()+speed*(.4+tm),tgt=aimLane(ya-30,ya+20);
-          if(tgt<0){s.st='gone';continue}
-          s.tgt=tgt;s.side=tgt===1?(Math.random()<.5?-1:1):(tgt===0?1:-1);s.st='warn';s.w=.4;snd(1500,900,.12,'square',.03);
+          const ww=.5*warnK(),ya=hands()+speed*(ww+(H-73)/(s.vb+speed));
+          if(s.cross){
+            // two swoops from opposite walls cross each other, leaving one lane open
+            const free=[0,1,2].filter(l=>gapFree(l,ya-30,ya+20+speed*.35));
+            if(!free.length){s.st='gone';continue}
+            const [a,b]=others(free[Math.random()*free.length|0]);
+            Object.assign(s,{tgt:b,side:-1,st:'warn',w:ww});
+            o.sw.push({st:'warn',w:ww,tgt:a,side:1,vb:s.vb,red:s.red});
+          } else {
+            const tgt=aimLane(ya-30,ya+20);
+            if(tgt<0){s.st='gone';continue}
+            Object.assign(s,{tgt,side:tgt===1?(Math.random()<.5?-1:1):(tgt===0?1:-1),st:'warn',w:ww});
+          }
+          snd(1500,900,.12,'square',.03);
         } else if(s.st==='warn'&&(s.w-=dt)<=0){
           s.x0=s.side<0?8:136;s.y0=camY+H+6;
           s.vx=(LX[s.tgt]-s.x0)/((s.y0-(p.y+9))/(s.vb+speed));s.age=0;s.st='fly';
@@ -484,7 +520,7 @@ const TR={
     start(o){
       const vs=90+speed*.4,ya=hands()+speed*(.6+(H-70)/(vs+speed)),lane=aimLane(ya-30,ya+30);
       if(lane<0)return false;
-      Object.assign(o,{lane,vs,st:'warn',w:.6});snd(300,150,.25,'sawtooth',.03);return true;
+      Object.assign(o,{lane,vs,st:'warn',w:.6*warnK()});snd(300,150,.25,'sawtooth',.03);return true;
     },
     tick(o,dt){
       if(o.st==='warn'){if((o.w-=dt)<=0){o.st='on';o.y=camY+H+4}return}
@@ -505,7 +541,7 @@ const TR={
     tick(o,dt){
       o.t+=dt;
       const near=o.y-(p.y+18);
-      if(o.st==='idle'&&near<60+speed*.15){
+      if(o.st==='idle'&&near<20+speed*.75*warnK()){
         o.st='rear';o.t=0;o.dir=o.lane===1?(p.lane===2?1:p.lane===0?-1:(Math.random()<.5?-1:1)):(o.lane===0?1:-1);
         snd(900,700,.2,'square',.02);
       } else if(o.st==='rear'&&near<4&&o.t>.25){o.st='strike';o.t=0;snd(400,1200,.08,'square',.04)}
@@ -531,43 +567,61 @@ const TR={
       if(o.st==='rear'&&(T*10|0)%2)txt('!',x+(o.dir||0)*10-1,y-26,1,'r');
     },
   },
+  // lava geysers: one lane early on; later, sequences like Jetpack Joyride lasers:
+  // sweep (lane after lane), squeeze (both sides then the middle, or the reverse), double (two lanes at once)
   geyser:{
     start(o){
-      const a=hands()+speed*.9,b=hands()+speed*1.75,lane=aimLane(a-18,b);
-      if(lane<0)return false;
-      Object.assign(o,{lane,st:'warn',t:0,top:lavaY});snd(70,50,.6,'sawtooth',.05);return true;
+      const d=diff(p.y),wt=Math.max(.5,.9*warnK()),r=Math.random(),h0=hands();
+      const pat=d<.15?'single':r<.35?'sweep':r<.6&&d>.3?'squeeze':r<.8&&d>.45?'double':'single';
+      let steps=null;
+      if(pat==='sweep'){const gap=.55-.1*d,ord=Math.random()<.5?[0,1,2]:[2,1,0];steps=ord.map((l,i)=>({lanes:[l],t0:i*gap,dur:.45}))}
+      else if(pat==='squeeze'){const mid=Math.random()<.5;steps=[{lanes:mid?[1]:[0,2],t0:0,dur:.6},{lanes:mid?[0,2]:[1],t0:.75,dur:.6}]}
+      else if(pat==='double'){const f=r3();steps=[{lanes:others(f),t0:0,dur:.7}]}
+      // every step must leave a lane you can be in (no gap) while it erupts
+      const fair=st=>st&&st.every(s=>{const a=h0+speed*(s.t0+wt)-18,b=h0+speed*(s.t0+wt+s.dur);return [0,1,2].some(l=>!s.lanes.includes(l)&&gapFree(l,a,b+speed*.35))});
+      if(!fair(steps)){const lane=aimLane(h0+speed*wt-18,h0+speed*(wt+.8));if(lane<0)return false;steps=[{lanes:[lane],t0:0,dur:.8}]}
+      for(const s of steps)Object.assign(s,{wt,top:lavaY,ph:'wait'});
+      Object.assign(o,{steps,t:0});return true;
     },
     tick(o,dt){
       o.t+=dt;
-      if(o.st==='warn'){
-        if(Math.random()<.4)parts.push({x:LX[o.lane]+Math.random()*8-4,y:Math.max(lavaY,camY)+2,vy:30+Math.random()*30,g:0,l:.5,c:Math.random()<.5?'o':'y'});
-        if(o.t>=.9){o.st='erupt';o.t=0;shake=Math.max(shake,2);snd(120,40,.7,'sawtooth',.08)}
-      } else if(o.st==='erupt'){
-        o.top=lavaY+(camY+H+10-lavaY)*Math.min(1,o.t/.15);
-        if(!o.hitDone&&p.y+2<o.top&&Math.abs(p.x-LX[o.lane])<7){o.hitDone=true;hit()}
-        if(o.t>=.8){o.st='end';o.t=0}
-      } else if(o.st==='end'){
-        o.top=lavaY+(camY+H+10-lavaY)*Math.max(0,1-o.t/.25);
-        if(o.t>=.25)o.dead=true;
+      for(const s of o.steps){
+        const t=o.t-s.t0;
+        if(t<0)continue;
+        if(s.ph==='wait'){s.ph='warn';snd(70,50,.5,'sawtooth',.04)}
+        if(s.ph==='warn'){
+          for(const l of s.lanes)if(Math.random()<.4)parts.push({x:LX[l]+Math.random()*8-4,y:Math.max(lavaY,camY)+2,vy:30+Math.random()*30,g:0,l:.5,c:Math.random()<.5?'o':'y'});
+          if(t>=s.wt){s.ph='erupt';shake=Math.max(shake,2);snd(120,40,.6,'sawtooth',.07)}
+        } else if(s.ph==='erupt'){
+          s.top=lavaY+(camY+H+10-lavaY)*Math.min(1,(t-s.wt)/.15);
+          if(!s.hitDone&&p.y+2<s.top&&s.lanes.some(l=>Math.abs(p.x-LX[l])<7)){s.hitDone=true;hit()}
+          if(t>=s.wt+s.dur)s.ph='end';
+        } else if(s.ph==='end'){
+          s.top=lavaY+(camY+H+10-lavaY)*Math.max(0,1-(t-s.wt-s.dur)/.25);
+          if(t>=s.wt+s.dur+.25)s.ph='done';
+        }
       }
+      if(o.steps.every(s=>s.ph==='done'))o.dead=true;
     },
     draw(o){
-      const x=LX[o.lane];
-      if(o.st==='warn'){
-        const ly=Math.min(H,sy(lavaY)),on=(T*10|0)%2;
-        cx.globalAlpha=on?.28:.12;f(x-6,0,12,ly,'o');cx.globalAlpha=1;
-        for(let yy=ly-6;yy>0;yy-=8)f(x-.5,yy,1,3,on?'y':'o');
-        for(let i=0;i<5;i++)f(x-5+hash(i+(T*12|0))*10,ly-1.5-hash(i*7+(T*12|0))*6,1.5,1.5,i%2?'y':'o');
-        if(on)txt('!',x-1,Math.min(ly,H)-22,2,'y');
-        return;
+      const ly=Math.min(H,sy(lavaY)),on=(T*10|0)%2;
+      for(const s of o.steps)for(const l of s.lanes){
+        const x=LX[l];
+        if(s.ph==='warn'){
+          cx.globalAlpha=on?.28:.12;f(x-6,0,12,ly,'o');cx.globalAlpha=1;
+          for(let yy=ly-6;yy>0;yy-=8)f(x-.5,yy,1,3,on?'y':'o');
+          for(let i=0;i<5;i++)f(x-5+hash(i+l*9+(T*12|0))*10,ly-1.5-hash(i*7+l+(T*12|0))*6,1.5,1.5,i%2?'y':'o');
+          if(on)txt('!',x-1,ly-22,2,'y');
+        } else if(s.ph==='erupt'||s.ph==='end'){
+          const top=sy(s.top),bot=Math.min(H+2,sy(lavaY));
+          if(bot<=top)continue;
+          for(let yy=Math.max(-2,top);yy<bot;yy+=.5){
+            const wv=Math.sin(yy*.4+T*30+l)+Math.sin(yy*.17-T*20)*.7,hw=5+wv*.5;
+            f(x-hw,yy,hw*2,.5,'r');f(x-hw*.65,yy,hw*1.3,.5,'o');f(x-hw*.25+wv*.3,yy,hw*.5,.5,'y');
+          }
+          if(top>-4){f(x-6,top-1.5,12,2,'o');f(x-4,top-3,8,1.5,'y');f(x-2,top-4,1,1,'y');f(x+2,top-4.5,1,1,'o')}
+        }
       }
-      const top=sy(o.top),bot=Math.min(H+2,sy(lavaY));
-      if(bot<=top)return;
-      for(let yy=Math.max(-2,top);yy<bot;yy+=.5){
-        const wv=Math.sin(yy*.4+T*30)+Math.sin(yy*.17-T*20)*.7,hw=5+wv*.5;
-        f(x-hw,yy,hw*2,.5,'r');f(x-hw*.65,yy,hw*1.3,.5,'o');f(x-hw*.25+wv*.3,yy,hw*.5,.5,'y');
-      }
-      if(top>-4){f(x-6,top-1.5,12,2,'o');f(x-4,top-3,8,1.5,'y');f(x-2,top-4,1,1,'y');f(x+2,top-4.5,1,1,'o')}
     },
   },
   wall:{
@@ -618,20 +672,25 @@ const TR={
   },
 };
 
-// spike waves (Jetpack Joyride style): drops one after another, single lanes and pairs, always one lane open.
-// each drop shows its own "!" for SPIKE_WARN seconds before it falls.
-const SPIKE_WARN=.75,spikeV=()=>140+speed*.6;
+// spike waves (Jetpack Joyride style): drops one after another, always one lane open.
+// patterns: "mixed" singles and pairs, and later "stairs" that sweep across the lanes in a quick rhythm.
+// each drop shows its own "!" for sw seconds before it falls; sw shrinks as you climb.
+const spikeV=()=>140+speed*.6;
 const spikeEta=delay=>delay+(H-82)/(spikeV()+speed);
 function fireWave(){
-  const d=diff(p.y),n=1+Math.floor(Math.random()*(1.6+d*2.6)),gapT=.55-.2*d;
+  const d=diff(p.y),sw=.75*warnK(),stairs=d>.15&&Math.random()<.4;
+  const n=stairs?3:1+Math.floor(Math.random()*(1.6+d*2.6)),gapT=stairs?.34-.1*d:.55-.2*d;
+  const order=p.lane===1?(Math.random()<.5?[0,1,2]:[2,1,0]):p.lane===0?[0,1,2]:[2,1,0];
   let open=p.lane;
   for(let i=0;i<n;i++){
-    const delay=SPIKE_WARN+i*gapT,ya=hands()+speed*spikeEta(delay);
+    const delay=sw+i*gapT,ya=hands()+speed*spikeEta(delay);
     // lanes you can be in when it lands without falling (a fragile piece is fine as long as no spike hits you there)
-    const path=[0,1,2].filter(l=>gapFree(l,ya-30,ya+24));
+    const path=[0,1,2].filter(l=>gapFree(l,ya-30,ya+24+speed*.35));
     if(!path.length)continue;
     let lanes;
-    if(i>0&&Math.random()<.35+.45*d){
+    if(stairs){
+      const tgt=order[i];if(!path.some(l=>l!==tgt))continue;lanes=[tgt];
+    } else if(i>0&&Math.random()<.35+.45*d){
       // pair: leave one lane open, at most one swipe from the last open lane
       const near=path.filter(l=>Math.abs(l-open)<=1),pool=near.length?near:path,o=pool[Math.random()*pool.length|0];
       lanes=others(o);open=o;
@@ -640,7 +699,7 @@ function fireWave(){
       if(!path.some(l=>l!==tgt))continue;
       lanes=[tgt];open=path.filter(l=>l!==tgt).sort((a,b)=>Math.abs(a-tgt)-Math.abs(b-tgt))[0];
     }
-    for(const l of lanes)spikes.push({st:'warn',w:delay,lane:l,y:0});
+    for(const l of lanes)spikes.push({st:'warn',w:delay,sw,lane:l,y:0});
   }
 }
 
@@ -668,7 +727,7 @@ function update(dt){
     if(p.y-lavaY>110)lavaY=p.y-110;
 
     while(genY<p.y+300)placeSection();
-    while(nextY<p.y+230){const w=spawnAt(nextY);nextY+=85-35*diff(nextY)+Math.random()*30+w*spAt(nextY)}
+    while(nextY<p.y+230){const w=spawnAt(nextY);nextY+=150-100*diff(nextY)+Math.random()*40+w*spAt(nextY)}
     for(const o of traps){
       // a triggered trap that can't aim fairly right now keeps trying for a moment as the layout scrolls
       if(o.st==='wait'){if(p.y>=o.ty){if(TR[o.type].start(o))o.st=o.st==='wait'?'on':o.st;else if((o.tries=(o.tries||0)+1)>40){o.dead=true;known.delete(o.type)}}}
@@ -691,7 +750,7 @@ function update(dt){
     for(const s of spikes){
       if(s.st==='warn'){
         const b=s.w;s.w-=dt;
-        if(b>=SPIKE_WARN&&s.w<SPIKE_WARN)snd(880,880,.05,'square',.03);
+        if(b>=s.sw&&s.w<s.sw)snd(880,880,.05,'square',.03);
         if(s.w<=0){s.st='fall';s.y=camY+H+4}}
       else if(s.st==='fall'){s.y-=spikeV()*dt;
         if(s.y<p.y+16&&s.y+9>p.y&&Math.abs(p.x-LX[s.lane])<6){hit();s.st='gone'}
@@ -701,10 +760,10 @@ function update(dt){
 
     for(const j of jets){
       const L=j.side<0,mx=L?13:131;
-      if(j.st==='idle'&&(j.y-(p.y+8))/speed<1.15){j.st='warn';j.t=0;snd(90,60,.4,'sawtooth',.04)}
+      if(j.st==='idle'&&(j.y-(p.y+8))/speed<.45+.7*warnK()){j.st='warn';j.t=0;j.ww=.7*warnK();snd(90,60,.4,'sawtooth',.04)}
       else if(j.st==='warn'){
         if(Math.random()<.5)parts.push({x:mx,y:j.y+Math.random()*2-1,vx:-j.side*(15+Math.random()*25),vy:Math.random()*20-10,g:0,l:.3,c:Math.random()<.5?'o':'y'});
-        if((j.t+=dt)>=.7){j.st='fire';j.t=0;shake=Math.max(shake,1.5);snd(180,50,.6,'sawtooth',.07)}
+        if((j.t+=dt)>=j.ww){j.st='fire';j.t=0;shake=Math.max(shake,1.5);snd(180,50,.6,'sawtooth',.07)}
       } else if(j.st==='fire'){
         j.t+=dt;
         const inY=p.y<j.y+3&&p.y+16>j.y-3,inX=L?p.x<j.reach:p.x>j.reach;
@@ -824,7 +883,7 @@ function drawLava(){
 
 function drawObstacles(){
   for(const s of spikes){
-    if(s.st==='warn'&&s.w<SPIKE_WARN&&(T*8|0)%2)txt('!',LX[s.lane]-1,20,2,'y');
+    if(s.st==='warn'&&s.w<s.sw&&(T*8|0)%2)txt('!',LX[s.lane]-1,20,2,'y');
     if(s.st==='fall'){const t=sy(s.y+9),x=LX[s.lane];
       f(x-.5,t-4,.5,3,'#5f574f');f(x+1,t-3,.5,2,'#5f574f');
       for(let i=0;i<18;i++){const wf=Math.max(1,14-Math.floor(i*.78)),w=wf/2,x0=x-Math.ceil(wf/2)/2,y=t+i/2;
@@ -922,7 +981,8 @@ addEventListener('resize',fit);fit();
 let down=false,sx0=0,swiped=false;
 const stage=document.getElementById('stage');
 stage.addEventListener('pointerdown',e=>{unlock();down=true;swiped=false;sx0=e.clientX});
-stage.addEventListener('pointermove',e=>{if(down&&!swiped&&Math.abs(e.clientX-sx0)>22){move(e.clientX>sx0?1:-1);swiped=true}});
+// one drag can switch several lanes: each further 20px of travel counts as another swipe
+stage.addEventListener('pointermove',e=>{if(down&&Math.abs(e.clientX-sx0)>20){move(e.clientX>sx0?1:-1);sx0=e.clientX;swiped=true}});
 addEventListener('pointerup',()=>{if(down&&!swiped)tap();down=false});
 addEventListener('keydown',e=>{
   unlock();
