@@ -29,7 +29,7 @@ Add, remove or reorder anything. Check items off with [x].
       traps don't chase you into the lane you just escaped to; spikes fall a bit slower
 
 ## Next (after core feels right)
-- [ ] Gem trails along the safe lines (reward + guide, like coins)
+- [x] Gem trails along the safe lines (reward + guide); tiered orange/purple/red (2/6/12 pts), rarer+richer colors the further you climb, bigger 4-sided rotating sprite (not coins)
 - [ ] Shield charm (one free hit/fall), then rope/grapple, magnet, x2
 - [ ] A "vehicle" moment (mine cart / bat ride)
 - [ ] Height zones with new scenery (dungeon -> crystal mine -> lava forge -> frozen depths)

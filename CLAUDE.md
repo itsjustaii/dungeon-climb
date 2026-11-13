@@ -11,7 +11,9 @@ TODO.md tracks what's done and what's next. Design notes and fairness lessons: O
 - ~10s slow warm-up, then speed ramps steeply (~95 at 1 min, cap 140); warnings shrink as you climb
 - Vines come from hand-made sections that unlock by height; fragile (brown) pieces crumble 0.9s after grabbing
 - Traps come from a shuffled deck: spike waves, fire jets, geysers, bats, coiled/dropping snakes, wall spikes, buzzsaws
-- Score = height + close call bonuses (CLOSE / DODGE / CLUTCH), combos
+- Gem trail follows the current safe lane (curves instead of jumping); tiered orange/purple/red (2/6/12 pts), purple and red
+  get more common the further/faster you climb; close calls also spawn a small bonus burst
+- Score = height + gems + close call bonuses (CLOSE / DODGE / CLUTCH), combos
 
 ## Fairness rules (don't break these)
 - Every height has a way through; two broken vines start together but end at different heights
@@ -20,7 +22,7 @@ TODO.md tracks what's done and what's next. Design notes and fairness lessons: O
 - After changing generation or traps, run the in-browser bot checks (no-escape moments, fake warnings, trap droughts)
 
 ## Plan
-- Next: gems along safe lines, shield charm and power-ups; then a vehicle moment, height zones, shop/missions
+- Next: shield charm and power-ups (gems along safe lines are done); then a vehicle moment, height zones, shop/missions
 - Wrap with Capacitor for Android, publish on Play Store first
 - iOS later maybe (Apple fee is yearly)
 
