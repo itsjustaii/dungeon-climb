@@ -306,18 +306,32 @@ function placeSection(){
   if(y>WARM+200)sprinkleFragile(y-10,genY,sp,d);
 }
 
+// gem tiers: common orange early, purple and red cut in (and get more common) the further/faster you climb,
+// each worth more than the last. light/base/dark are the three facet shades, line is the pop-off-the-background outline.
+const GEM_TIERS=[
+  {d:0,  w:[1,.5], pts:2,  light:'y',       base:'o',       dark:'#a85e00', line:'#4a2a00'},
+  {d:.15,w:[0,.4], pts:6,  light:'#e8b8ff', base:'#b24aff', dark:'#5a1a73', line:'#28103a'},
+  {d:.4, w:[0,.3], pts:12, light:'#ff8fae', base:'r',       dark:'#8a0030', line:'#3d0016'},
+];
+function pickGemTier(d){
+  const ok=GEM_TIERS.filter(t=>d>=t.d),wt=t=>t.w[0]+(t.w[1]-t.w[0])*Math.min(1,(d-t.d)/(1-t.d));
+  let r=Math.random()*ok.reduce((s,t)=>s+wt(t),0),tier=ok[0];
+  for(const t of ok)if((r-=wt(t))<=0){tier=t;break}
+  return tier;
+}
 // gem trail: drop a gem in a lane that's currently clear, nudged toward the last lane so the trail
 // curves smoothly (Subway Surfers style "follow the safe line") instead of jumping between rows
 function placeGemRow(){
-  const y=gemY;gemY+=8;
+  const y=gemY;gemY+=14;
   const cand=[0,1,2].filter(l=>gapFree(l,y-4,y+4)&&!segs.some(s=>s.lane===l&&s.type==='F'&&!s.broken&&s.y0<y+4&&s.y1>y-4));
   if(!cand.length)return;
   gemLane=cand.includes(gemLane)?gemLane:cand.reduce((a,b)=>Math.abs(b-gemLane)<Math.abs(a-gemLane)?b:a);
-  gems.push({lane:gemLane,y,got:false,ph:Math.random()*10});
+  gems.push({lane:gemLane,y,got:false,ph:Math.random()*10,tier:pickGemTier(diff(y))});
 }
 // a short burst of bonus gems right above you after a close call (Jetpack Joyride style reward beat)
 function gemBurst(lane,y0){
-  for(let i=0;i<3;i++){const y=y0+i*7;if(clearAt(lane,y-4,y+4))gems.push({lane,y,got:false,ph:Math.random()*10})}
+  const tier=pickGemTier(diff(y0));
+  for(let i=0;i<3;i++){const y=y0+i*12;if(clearAt(lane,y-4,y+4))gems.push({lane,y,got:false,ph:Math.random()*10,tier})}
 }
 
 function close(label){
@@ -879,9 +893,9 @@ function update(dt){
 
     for(const g of gems){
       if(g.got)continue;
-      if(g.lane===p.lane&&Math.abs(p.x-LX[g.lane])<5&&hands()>=g.y-2&&hands()<g.y+6){
-        g.got=true;bonus+=2;gemCount++;
-        for(let i=0;i<5;i++)parts.push({x:LX[g.lane]+Math.random()*4-2,y:g.y,vy:20+Math.random()*30,vx:(Math.random()-.5)*20,l:.35,c:'y'});
+      if(g.lane===p.lane&&Math.abs(p.x-LX[g.lane])<5&&hands()>=g.y-5&&hands()<g.y+6){
+        g.got=true;bonus+=g.tier.pts;gemCount++;
+        for(let i=0;i<5;i++)parts.push({x:LX[g.lane]+Math.random()*4-2,y:g.y,vy:20+Math.random()*30,vx:(Math.random()-.5)*20,l:.35,c:g.tier.base});
         snd(900,1500,.08,'square',.03);
       }
     }
@@ -967,21 +981,27 @@ function drawVines(){
   for(const q of parts)f(q.x,sy(q.y),.5,.5,q.c);
 }
 
-// pixel gem: gold diamond with a bright highlight and an occasional sparkle fleck (Temple Run coin style)
-function drawGem(x,y,spark){
-  f(x-.5,y-1.5,1,1,'o');
-  f(x-1,y-.5,2,1,'y');
-  f(x-.5,y-.5,.5,.5,'w');
-  f(x-1,y+.5,2,.5,'o');
-  f(x-.5,y+1,1,.5,'o');
-  if(spark)f(x+1,y-1.5,.5,.5,'w');
+// faceted 4-sided gem (a tall rhombus, pointed top/bottom): a dark outline keeps it off the green vines,
+// and its width pulses with a cosine to fake a 3D spin, swapping which facet catches the light as it turns.
+function drawGem(x,y,tier,ph){
+  const c=Math.cos(T*2.4+ph),facing=c>=0,sc=.4+.6*Math.abs(c),maxW=2.8;
+  for(let row=-3;row<=3;row++){
+    let hw=maxW*(1-Math.abs(row)/3.5)*sc;
+    if(hw<.35)hw=.35;
+    const ry=y+row,L=facing?tier.light:tier.dark,R=facing?tier.dark:tier.light;
+    f(x-hw-.5,ry,hw+.5,1,tier.line);
+    f(x-hw,ry,hw,1,L);
+    f(x,ry,hw,1,R);
+    f(x+hw,ry,.5,1,tier.line);
+  }
+  if(Math.abs(c)>.3)f(x-.5,y-1.5,.5,.5,'w');
 }
 function drawGems(){
   for(const g of gems){
     if(g.got)continue;
     const ys=sy(g.y);
-    if(ys<-6||ys>H+6)continue;
-    drawGem(LX[g.lane],ys+Math.sin(T*3+g.ph)*.8,((T*4+g.ph)|0)%5===0);
+    if(ys<-10||ys>H+10)continue;
+    drawGem(LX[g.lane],ys+Math.sin(T*3+g.ph)*.8,g.tier,g.ph);
   }
 }
 
@@ -1074,7 +1094,7 @@ function drawHud(){
   txt(''+score(),16,8,2,'w');txt(m+'M',16,22,1,'l');
   if(combo>1&&T-comboT<3)txt('X'+combo,16+tw(''+score(),2)+4,8,1,'y');
   const hi='HI '+best;txt(hi,128-tw(hi,1),10,1,'y');
-  if(gemCount>0){drawGem(20,32,false);txt('x'+gemCount,24,30,1,'y')}
+  if(gemCount>0){drawGem(20,34,GEM_TIERS[0],0);txt('x'+gemCount,26,31,1,'y')}
   for(const q of pops){const tx=Math.max(14,Math.min(130-tw(q.s,1),Math.round(q.x-tw(q.s,1)/2)));
     if(q.t<.7||(T*12|0)%2)txt(q.s,tx,sy(q.y)-q.t*20,1,'y')}
   if(state==='play'){
