@@ -228,11 +228,12 @@ function snd(f1,f2,d,type='square',vol=.05){
   o.connect(g).connect(ac.destination);o.start(t);o.stop(t+d)}catch(e){}
 }
 
-let state='title',T=0,p,camY,lavaY,spikes,waves,jets,traps,deck,known,lastKind,segs,genY,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes;
+let state='title',T=0,p,camY,lavaY,spikes,waves,jets,traps,deck,known,lastKind,segs,genY,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes,gems,gemCount,gemY,gemLane;
 function reset(){
   p={lane:1,x:-6,y:0,stun:0,inv:0,anim:0,vy:0,prevLane:1,switchT:-9};
   camY=-20;lavaY=-24;spikes=[];waves=[];jets=[];traps=[];deck=[];known=new Set();lastKind=null;segs=[];genY=90;bubbles=[];parts=[];pops=[];
   nextY=WARM+100;it=0;playT=0;deadT=0;speed=42;shake=0;newBest=false;bonus=0;combo=0;comboT=-9;closes=0;
+  gems=[];gemCount=0;gemY=40;gemLane=1;
 }
 reset();
 
@@ -305,11 +306,26 @@ function placeSection(){
   if(y>WARM+200)sprinkleFragile(y-10,genY,sp,d);
 }
 
+// gem trail: drop a gem in a lane that's currently clear, nudged toward the last lane so the trail
+// curves smoothly (Subway Surfers style "follow the safe line") instead of jumping between rows
+function placeGemRow(){
+  const y=gemY;gemY+=8;
+  const cand=[0,1,2].filter(l=>gapFree(l,y-4,y+4)&&!segs.some(s=>s.lane===l&&s.type==='F'&&!s.broken&&s.y0<y+4&&s.y1>y-4));
+  if(!cand.length)return;
+  gemLane=cand.includes(gemLane)?gemLane:cand.reduce((a,b)=>Math.abs(b-gemLane)<Math.abs(a-gemLane)?b:a);
+  gems.push({lane:gemLane,y,got:false,ph:Math.random()*10});
+}
+// a short burst of bonus gems right above you after a close call (Jetpack Joyride style reward beat)
+function gemBurst(lane,y0){
+  for(let i=0;i<3;i++){const y=y0+i*7;if(clearAt(lane,y-4,y+4))gems.push({lane,y,got:false,ph:Math.random()*10})}
+}
+
 function close(label){
   combo=T-comboT<3?combo+1:1;comboT=T;closes++;
   const pts=10*combo;bonus+=pts;
   pops.push({s:label+' +'+pts,x:p.x,y:p.y+22,t:0});
   snd(660,1320,.1,'square',.04);
+  gemBurst(p.lane,p.y+20);
 }
 
 function move(d){
@@ -798,6 +814,7 @@ function update(dt){
     if(p.y-lavaY>110)lavaY=p.y-110;
 
     while(genY<p.y+300)placeSection();
+    while(gemY<p.y+180)placeGemRow();
     // after each trap, keep `w` seconds of travel clear (less of it at high speed, so the late game stays busy)
     while(nextY<p.y+230){const w=spawnAt(nextY);nextY+=150-100*diff(nextY)+Math.random()*40+w*spAt(nextY)*(1-.35*diff(nextY))}
     for(const o of traps){
@@ -859,6 +876,16 @@ function update(dt){
     }
     jets=jets.filter(j=>j.y>camY-30);
     segs=segs.filter(s=>s.y1>camY-20);
+
+    for(const g of gems){
+      if(g.got)continue;
+      if(g.lane===p.lane&&Math.abs(p.x-LX[g.lane])<5&&hands()>=g.y-2&&hands()<g.y+6){
+        g.got=true;bonus+=2;gemCount++;
+        for(let i=0;i<5;i++)parts.push({x:LX[g.lane]+Math.random()*4-2,y:g.y,vy:20+Math.random()*30,vx:(Math.random()-.5)*20,l:.35,c:'y'});
+        snd(900,1500,.08,'square',.03);
+      }
+    }
+    gems=gems.filter(g=>!g.got&&g.y>camY-20);
 
     for(const s of segs)if(isGap(s)&&s.lane===p.lane&&Math.abs(p.x-LX[s.lane])<5&&hands()>=s.y0+1&&hands()<s.y1){die('fall');break}
     if(state==='play'&&lavaY>=p.y+2)die('burn');
@@ -938,6 +965,24 @@ function drawVines(){
     }
   }
   for(const q of parts)f(q.x,sy(q.y),.5,.5,q.c);
+}
+
+// pixel gem: gold diamond with a bright highlight and an occasional sparkle fleck (Temple Run coin style)
+function drawGem(x,y,spark){
+  f(x-.5,y-1.5,1,1,'o');
+  f(x-1,y-.5,2,1,'y');
+  f(x-.5,y-.5,.5,.5,'w');
+  f(x-1,y+.5,2,.5,'o');
+  f(x-.5,y+1,1,.5,'o');
+  if(spark)f(x+1,y-1.5,.5,.5,'w');
+}
+function drawGems(){
+  for(const g of gems){
+    if(g.got)continue;
+    const ys=sy(g.y);
+    if(ys<-6||ys>H+6)continue;
+    drawGem(LX[g.lane],ys+Math.sin(T*3+g.ph)*.8,((T*4+g.ph)|0)%5===0);
+  }
 }
 
 function drawLava(){
@@ -1029,6 +1074,7 @@ function drawHud(){
   txt(''+score(),16,8,2,'w');txt(m+'M',16,22,1,'l');
   if(combo>1&&T-comboT<3)txt('X'+combo,16+tw(''+score(),2)+4,8,1,'y');
   const hi='HI '+best;txt(hi,128-tw(hi,1),10,1,'y');
+  if(gemCount>0){drawGem(20,32,false);txt('x'+gemCount,24,30,1,'y')}
   for(const q of pops){const tx=Math.max(14,Math.min(130-tw(q.s,1),Math.round(q.x-tw(q.s,1)/2)));
     if(q.t<.7||(T*12|0)%2)txt(q.s,tx,sy(q.y)-q.t*20,1,'y')}
   if(state==='play'){
@@ -1042,16 +1088,17 @@ function drawHud(){
     txt('SCORE '+score(),'c',98,1,'w');
     txt('HEIGHT '+m+'M','c',108,1,'l');
     txt('CLOSE CALLS '+closes,'c',118,1,'l');
-    txt('BEST '+best,'c',130,1,'y');
-    if(newBest&&(T*4|0)%2)txt('NEW BEST!','c',142,1,'G');
-    if(deadT>.8&&(T*2|0)%2===0)txt('TAP TO RETRY','c',162,1,'w');
+    txt('GEMS '+gemCount,'c',128,1,'y');
+    txt('BEST '+best,'c',140,1,'y');
+    if(newBest&&(T*4|0)%2)txt('NEW BEST!','c',152,1,'G');
+    if(deadT>.8&&(T*2|0)%2===0)txt('TAP TO RETRY','c',172,1,'w');
   }
 }
 
 function draw(){
   cx.save();
   if(shake>0)cx.translate(Math.round((Math.random()-.5)*shake)*S,Math.round((Math.random()-.5)*shake)*S);
-  drawBg();drawVines();drawTrapsBack();drawObstacles();drawPlayer();drawFlames();drawTrapsFront();drawLava();
+  drawBg();drawVines();drawGems();drawTrapsBack();drawObstacles();drawPlayer();drawFlames();drawTrapsFront();drawLava();
   cx.restore();
   drawHud();
 }
