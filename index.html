@@ -240,6 +240,8 @@ reset();
 const sy=wy=>H-(wy-camY);
 const r3=()=>Math.random()*3|0;
 const hands=()=>p.y+16;
+// you only fall once your body has climbed past the end of the vine (not the moment your hands reach it)
+const GRIP=6,grip=()=>p.y+GRIP;
 const isGap=s=>s.type==='G'||s.broken;
 const onSeg=s=>s.lane===p.lane&&hands()>=s.y0&&hands()<s.y1;
 let deadY=0;
@@ -296,7 +298,7 @@ function sprinkleFragile(a,b,sp,d){
   }
 }
 function placeSection(){
-  const y=genY,d=diff(y),sp=spAt(y),g=Math.round((14+Math.random()*6)*Math.max(1,sp/60)+d*4),W=Math.max(20,sp*(.42-.12*d)),S=g+W;
+  const y=genY,d=diff(y),sp=spAt(y),g=Math.max(22,Math.round((14+Math.random()*6)*Math.max(1,sp/60)+d*4)),W=Math.max(20,sp*(.42-.12*d)),S=g+W;
   const ok=SECTIONS.filter(s=>d>=s.d),wt=s=>s.w[0]+(s.w[1]-s.w[0])*Math.min(1,(d-s.d)/(1-s.d));
   let r=Math.random()*ok.reduce((t,s)=>t+wt(s),0),sec=ok[0];
   for(const s of ok)if((r-=wt(s))<=0){sec=s;break}
@@ -348,7 +350,7 @@ function move(d){
   if(n===p.lane)return;
   for(const s of segs){
     if(s.lane!==p.lane)continue;
-    const dist=s.y0-hands();
+    const dist=s.y0-grip();
     if(isGap(s)&&dist>=0&&dist<10){close('DODGE');break}
     if(s.type==='F'&&!s.broken&&s.t>FRAG*.65&&onSeg(s)){close('CLUTCH');break}
   }
@@ -359,7 +361,7 @@ function tap(){
   else if(state==='dead'&&deadT>.8){reset();state='intro';snd(330,660,.15)}
 }
 function die(kind){
-  deadY=p.y;state='dead';deathKind=kind;deadT=0;p.vy=0;shake=6;
+  deadY=p.y;state='dead';deathKind=kind;deadT=0;p.vy=kind==='fall'?55:0;shake=6; // a fall starts with a small hop off the vine end
   if(score()>best){best=score();newBest=true;try{localStorage.setItem('lavaclimb_best',best)}catch(e){}}
   snd(440,40,.8,'sawtooth',.07);
 }
@@ -901,7 +903,7 @@ function update(dt){
     }
     gems=gems.filter(g=>!g.got&&g.y>camY-20);
 
-    for(const s of segs)if(isGap(s)&&s.lane===p.lane&&Math.abs(p.x-LX[s.lane])<5&&hands()>=s.y0+1&&hands()<s.y1){die('fall');break}
+    for(const s of segs)if(isGap(s)&&s.lane===p.lane&&Math.abs(p.x-LX[s.lane])<5&&grip()>=s.y0&&hands()<s.y1){die('fall');break}
     if(state==='play'&&lavaY>=p.y+2)die('burn');
   } else if(state==='dead'){
     deadT+=dt;lavaY+=10*dt;
