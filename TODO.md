@@ -33,7 +33,8 @@ Add, remove or reorder anything. Check items off with [x].
 
 ## Next (after core feels right)
 - [x] Gem trails along the safe lines (reward + guide); tiered orange/purple/red (2/6/12 pts), rarer+richer colors the further you climb, bigger 4-sided rotating sprite (not coins)
-- [ ] Shield charm (one free hit/fall), then rope/grapple, magnet, x2
+- [x] Power-ups: shield, rope, magnet, double gems, lava cooled; on vines and between vines (swipe to grab)
+- [ ] Playtest the new difficulty with friends: lava surge window, bait from 260M, power-up frequency
 - [ ] A "vehicle" moment (mine cart / bat ride)
 - [ ] Height zones with new scenery (dungeon -> crystal mine -> lava forge -> frozen depths)
 - [ ] Before launch: gem shop, outfits, gadgets, missions + ranks, end-of-run spin, daily reward

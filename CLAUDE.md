@@ -16,6 +16,10 @@ TODO.md tracks what's done and what's next. Design notes and fairness lessons: O
   before a break; more bait and more red the higher you climb; close calls also spawn a small bonus burst
 - Gem chain: x2/x3/x4 gem points at 15/40/100 gems in a row; a hit or 2s without a gem breaks it
 - Lava surge: a hit brings the lava to your heels for ~4s; a second hit in that time burns you
+- Bait gems start at 260M, power-ups at 300M (then one roughly every 17s, from a shuffled deck)
+- Power-ups: shield (absorbs a hit) and rope (saves a fall) are held until used; magnet 8s, double gems 10s,
+  lava cooled 8s run on timers. Half sit on a vine, half float between two vines and are grabbed by swiping across
+- Pause: top-right button, 3-2-1 on resume, auto-pauses when the app is hidden
 - Score = height + gems + close call bonuses (CLOSE / DODGE / CLUTCH), combos
 
 ## Fairness rules (don't break these)
@@ -23,10 +27,11 @@ TODO.md tracks what's done and what's next. Design notes and fairness lessons: O
 - Every warning is a real attack: fairness is checked before the warning shows, and a showing warning reserves its lane
 - Never aim at the lane the player just escaped to; never put fragile pieces on the only way through
 - Bait gems are always optional: the vine under them is whole and a neighbouring vine stays open past the break
+- Power-ups only go where the vines involved are whole and no trap is set up; between-vine ones need a safe landing
 - After changing generation or traps, run the in-browser bot checks (no-escape moments, fake warnings, trap droughts)
 
 ## Plan
-- Next: shield charm and power-ups (gems along safe lines are done); then a vehicle moment, height zones, shop/missions
+- Next: friends playtest and tuning of the new stuff; then a vehicle moment, height zones, shop/missions
 - Wrap with Capacitor for Android, publish on Play Store first
 - iOS later maybe (Apple fee is yearly)
 
