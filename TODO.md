@@ -4,7 +4,7 @@ Add, remove or reorder anything. Check items off with [x].
 
 ## Bugs
 - [x] Death screen score/height keep dropping during the fall animation (shows SCORE 150 / 0M but NEW BEST 289)
-- [ ] Game doesn't pause when the app is backgrounded (you die if you switch apps)
+- [x] Game doesn't pause when the app is backgrounded (you die if you switch apps): auto-pauses now
 
 ## Gameplay
 - [x] Darts were near impossible to dodge: replaced with wall fire jets (vent glows, then fire covers 1-2 lanes from that side; dodge by switching lanes)
@@ -27,6 +27,8 @@ Add, remove or reorder anything. Check items off with [x].
 
 - [x] Friend feedback: multi-swipe removed; two-vine breaks never stop at the same height;
       traps don't chase you into the lane you just escaped to; spikes fall a bit slower
+- [x] Fall only after climbing past the vine end (small hop first), not when hands reach it
+- [x] Lava surge: a hit brings the lava to your heels for ~4s, a second hit in that time burns you; ESCAPED +20 if you get clear
 
 ## Next (after core feels right)
 - [x] Gem trails along the safe lines (reward + guide); tiered orange/purple/red (2/6/12 pts), rarer+richer colors the further you climb, bigger 4-sided rotating sprite (not coins)
@@ -38,7 +40,7 @@ Add, remove or reorder anything. Check items off with [x].
 
 ## Feel / UX
 - [ ] Death screen hard to read over lava (add a solid box behind the text)
-- [ ] Pause button
+- [x] Pause button (top-right, 3-2-1 countdown on resume, P/Esc on keyboard)
 - [ ] Mute button
 - [ ] Lava meter on the left needs an icon or label
 - [ ] Music
