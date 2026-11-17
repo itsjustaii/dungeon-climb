@@ -1413,13 +1413,67 @@ function drawPlayer(){
 }
 
 // buttons are drawn and registered every frame; a tap runs the one under it
-let btns=[];
-const BTN={go:['#00a84a','#4dff8a','#00632c','w'],alt:['#2c3d72','#5a74c4','#151f3f','w'],gold:['#d98600','#ffd04a','#8a4f00','w'],off:['#2a2730','#45404f','#16141b','#83769c']};
+let btns=[],ptr=null; // ptr: where a finger is held down (world units), so the button under it looks pressed
+
+// UI kit: rounded pixel boxes with a light top edge and a dark lip, so menus look carved into the dungeon
+const rr=(x,y,w,h,c,r=1)=>{f(x+r,y,w-2*r,r,c);f(x,y+r,w,h-2*r,c);f(x+r,y+h-r,w-2*r,r,c)};
+const STONE={hi:'#d8c8a8',face:'#8f7f69',mid:'#6e604f',lo:'#3e342c'};
+function shadow(x,y,w,h){cx.globalAlpha=.45;rr(x+1,y+1.5,w,h,'k',1.5);cx.globalAlpha=1}
+function stud(x,y){f(x,y,2,2,'#8a4f00');f(x,y,1.5,1.5,'y');f(x+.5,y+.5,.5,.5,'w')}
+// the old checkerboard dimmer, as one cached pattern instead of thousands of squares
+let ditherPat;
+function dim(a=1){
+  if(!ditherPat){const c=document.createElement('canvas');c.width=c.height=2*S;const g=c.getContext('2d');g.fillStyle='#000';g.fillRect(0,0,S,S);g.fillRect(S,S,S,S);ditherPat=cx.createPattern(c,'repeat')}
+  cx.globalAlpha=a;cx.fillStyle=ditherPat;cx.fillRect(0,0,W*S,H*S);cx.globalAlpha=1;
+}
+// carved stone frame with gold studs; the inside is see-through dark so the dungeon shows behind it
+function panel(x,y,w,h,a=.8){
+  const ix=x+3,iy=y+3,iw=w-6,ih=h-6;
+  cx.save();cx.beginPath();cx.rect(0,0,W*S,H*S);cx.rect(ix*S,iy*S,iw*S,ih*S);cx.clip('evenodd');
+  shadow(x,y,w,h);rr(x,y,w,h,'k',1.5);
+  rr(x+.5,y+.5,w-1,h-1,STONE.lo,1);rr(x+.5,y+.5,w-1.5,h-1.5,STONE.hi,1);rr(x+1,y+1,w-2,h-2,STONE.face,1);
+  for(let i=0;i<(w+h)/5;i++){ // chips and cracks in the stone
+    const q=hash(i*7.3+w),t=hash(i*3.1+h)*2,e=i%4;
+    if(e<2)f(x+1.5+q*(w-4),e?y+1.5+t:y+h-3+t*.5,1,.5,STONE.mid);else f(e<3?x+1.5+t*.5:x+w-3+t*.5,y+1.5+q*(h-4),.5,1,STONE.mid);
+  }
+  for(const [sx,sy] of [[x+.5,y+.5],[x+w-2.5,y+.5],[x+.5,y+h-2.5],[x+w-2.5,y+h-2.5]])stud(sx,sy);
+  cx.restore();
+  cx.globalAlpha=a;f(ix,iy,iw,ih,'#110c1c');
+  cx.globalAlpha=a*.6;f(ix,iy,iw,1,'k');f(ix,iy,.5,ih,'k'); // the inner edge is in shadow
+  cx.globalAlpha=a*.35;f(ix,iy+ih-.5,iw,.5,STONE.hi);cx.globalAlpha=1;
+}
+// a slot sunk into the surface (score plaque, gem counter)
+function inset(x,y,w,h){cx.globalAlpha=.55;rr(x,y,w,h,'k',1);cx.globalAlpha=1;f(x+1,y,w-2,.5,'k');cx.globalAlpha=.4;f(x+1,y+h-.5,w-2,.5,STONE.hi);cx.globalAlpha=1}
+// a raised tile inside a panel (shop rows, outfit picks)
+function card(x,y,w,h,sel){
+  rr(x,y,w,h,sel?'y':'k',1);rr(x+.5,y+.5,w-1,h-1,'#120e1c',.5);rr(x+.5,y+.5,w-1,h-2,'#4a3f63',.5);rr(x+1,y+1,w-2,h-2.5,'#2a2240',.5);
+}
+// little ▶ / ◀ pointer that bobs next to the main button
+function arrow(x,y,dir,c='y'){
+  const b=(T*4|0)%2;x+=dir*b-dir*1.5;y-=1;
+  for(const [d,col] of [[1,'k'],[0,c]])for(let i=0;i<4;i++)f(x+d+(dir>0?i:-i-1),y+d+i,1,8-2*i,col);
+}
+// big carved headings: outline, an extruded side in a darker shade, a two-tone face and a shine line (sp: px per letter)
+function heading(s,y,sc,c,hi,lo,sp){
+  s=''+s;const n=sc*S,a=sp||6*n,wd=[...s].reduce((t,ch)=>t+(ch===' '?4*n:a),0)-(sp?3:n),x0=Math.round((W*S-wd)/2),y0=Math.round(y*S),d=Math.max(2,Math.round(n*.75)),o=2;
+  const put=(dx,dy,col,top)=>{cx.fillStyle=P[col]||col;let xx=x0;for(const ch of s){if(F[ch])for(const [gx,gy,gw] of glyph(ch,n))if(top===undefined||gy<top)cx.fillRect(xx+gx+dx,y0+gy+dy,gw,1);xx+=ch===' '?4*n:a}};
+  for(let dy=-o;dy<=d+o;dy++)for(const dx of dy===-o||dy===d+o?[-o,0,o]:[-o,o])put(dx,dy,'k');
+  for(let dy=d;dy>0;dy--)put(0,dy,lo);
+  put(0,0,c);put(0,0,hi,3*n);
+  cx.globalAlpha=.7;put(0,0,'w',Math.max(1,n>>2));cx.globalAlpha=1;
+}
+
+const BTN={go:['#00a84a','#7dff6a','#00532a','w'],alt:['#4b5a86','#8d9ccc','#222a48','w'],gold:['#e08c00','#ffe060','#7a3f00','w'],off:['#3a3346','#5a5068','#1a1622','#9d90b0']};
 // o: kind (colours), sc (label size), gem (gem in front of the label, for prices), sub (small second line)
 function btn(label,x,y,w,h,fn,o={}){
-  const [face,hi,lo,tc]=BTN[o.kind||'alt'],sc=o.sc||1;
-  f(x,y,w,h,'k');f(x+.5,y+.5,w-1,h-1,face);f(x+.5,y+.5,w-1,1,hi);f(x+.5,y+h-2,w-1,1.5,lo);
-  const g=o.gem?8:0,lx=x+(w-tw(label,sc)-g)/2,ly=y+(h-7*sc-(o.sub?6:0))/2-.5;
+  const [face,hi,lo,tc]=BTN[o.kind||'alt'],sc=o.sc||1,D=2;
+  const pr=fn&&ptr&&ptr.x>=x&&ptr.x<x+w&&ptr.y>=y&&ptr.y<y+h?1.5:0,fy=y+.5+pr,fh=h-1-D;
+  shadow(x,y,w,h);rr(x,y,w,h,'k',1.5);
+  rr(x+.5,fy,w-1,h-1-pr,lo,1);rr(x+.5,fy,w-1,fh,face,1);
+  f(x+1.5,fy+.5,w-3,1,hi);                                  // top shine
+  cx.globalAlpha=.35;f(x+1,fy+fh-1,w-2,1,lo);cx.globalAlpha=1; // shade along the bottom of the face
+  if(o.kind!=='off'){f(x+1.5,fy+1.5,1.5,1,'w');f(x+1.5,fy+2.5,.5,1,'w')} // glint in the corner
+  const g=o.gem?8:0,lx=x+(w-tw(label,sc)-g)/2,ly=fy+(fh-7*sc-(o.sub?6:0))/2;
   if(g)drawGem(lx+3,ly+3.5*sc,GEM_TIERS[0],0);
   txt(label,lx+g,ly,sc,tc);
   if(o.sub)txt(o.sub,x+(w-tw(o.sub,.5))/2,ly+7*sc+2.5,.5,tc);
@@ -1430,18 +1484,14 @@ function gemTxt(v,x,y,sc,c){
   const w=tw(''+v,sc)+8;x=x==='c'?(W-w)/2:x.r!==undefined?x.r-w:x;
   drawGem(x+3,y+3.5*sc,GEM_TIERS[0],0);txt(v,x+8,y,sc,c);
 }
-function logo(s,y,c,hi){
-  const a=33,x0=Math.round((W*S-(s.length*a-3))/2),y0=y*S;
-  const put=(dx,dy,col,top)=>{cx.fillStyle=P[col]||col;[...s].forEach((ch,i)=>{for(const [gx,gy,gw] of glyph(ch,6))if(!top||gy<top)cx.fillRect(x0+i*a+gx+dx,y0+gy+dy,gw,1)})};
-  for(const [dx,dy] of [[-2,0],[2,0],[0,-2],[0,2],[-2,-2],[2,-2],[-2,2],[2,2],[-2,5],[0,5],[2,5]])put(dx,dy,'k');
-  put(0,0,c);put(0,0,hi,17);
-}
+// gem counter sunk into a slot, right-aligned at x
+function bankSlot(v,r,y,c){const w=tw(''+v,1)+8;inset(r-w-3,y-2.5,w+6,12);gemTxt(v,{r},y,1,c)}
 function drawTitle(){
-  logo('DUNGEON',30,'o','y');logo('CLIMB',57,'#00c040','#7dff6a');
-  gemTxt(save.bank,{r:130},8,1,'y');
-  txt('BEST '+best,'c',90,1,'y');
-  btn('PLAY',30,116,84,26,play,{kind:'go',sc:1.5});
-  btn('SHOP',30,148,84,20,openShop,{kind:'gold'});
+  heading('DUNGEON',28,3,'o','y','#8a2a00',33);heading('CLIMB',56,3,'#00c040','#7dff6a','#00532a',33);
+  bankSlot(save.bank,130,8,'y');
+  {const s='BEST '+best,w=tw(s,1);inset((W-w)/2-5,88,w+10,12);txt(s,'c',90.5,1,'y')}
+  btn('PLAY',30,114,84,28,play,{kind:'go',sc:1.5});arrow(22,124,1);arrow(122,124,-1);
+  btn('SHOP',30,148,84,22,openShop,{kind:'gold'});
   if(save.boost.shield>0){const s='x'+save.boost.shield+' READY',x0=(W-tw(s,.5)-12)/2;drawIcon('shield',x0+5,180);txt(s,x0+12,178,.5,'l')}
   txt('SWIPE TO SWITCH VINES','c',200,.5,'l');
 }
@@ -1455,16 +1505,27 @@ function buy(cost,fn){
   save.bank-=cost;fn();store();snd(660,1320,.15,'square',.05);
 }
 const priceBtn=(cost,x,y,fn)=>btn(''+cost,x,y,36,19,()=>buy(cost,fn),{kind:save.bank>=cost?'go':'off',gem:true});
+// folder tab on top of the shop panel; the open one is stone and runs into the frame
+function tab(s,x,i){
+  const on=i===shopTab,y=on?27:30,h=on?18:12;
+  rr(x,y,38,h,'k',1);
+  if(on){rr(x+.5,y+.5,37,h,STONE.hi,1);rr(x+1,y+1,36,h,STONE.face,1)}else{rr(x+.5,y+.5,37,h-1,'#2e2620',1);rr(x+.5,y+.5,37,h-1.5,'#5e5244',1);rr(x+1,y+1,36,h-2,'#4a4036',1)}
+  txt(s,x+(38-tw(s,.5))/2,y+(on?4:3.5),.5,on?'w':'#b5a690');
+  btns.push({x,y:27,w:38,h:16,fn:()=>{shopTab=i;snd(520,520,.04)}});
+}
 function drawShop(){
-  btn('BACK',14,6,34,15,closeShop);
-  txt('SHOP','c',8,1.5,'o');
-  gemTxt(save.bank,{r:130},10,1,T-shopNo<.4&&(T*16|0)%2?'r':'y'); // flashes red when you can't afford something
-  ['UPGRADES','BOOSTS','OUTFITS'].forEach((s,i)=>btn(s,14+i*39,28,38,14,()=>{shopTab=i;snd(520,520,.04)},{kind:i===shopTab?'alt':'off',sc:.5}));
-  const row=(y,h)=>{f(14,y,116,h,'#2c3d72');f(14.5,y+.5,115,h-1,'#151f3f')};
+  btn('BACK',12,5,36,17,closeShop);
+  heading('SHOP',7,1.5,'o','y','#8a2a00');
+  bankSlot(save.bank,130,10,T-shopNo<.4&&(T*16|0)%2?'r':'y'); // flashes red when you can't afford something
+  const tabs=['UPGRADES','BOOSTS','OUTFITS'];
+  tabs.forEach((s,i)=>i!==shopTab&&tab(s,14+i*39,i));
+  panel(9,41,126,213,.85);
+  tab(tabs[shopTab],14+shopTab*39,shopTab);
+  const row=(y,h)=>card(14,y,116,h);
   if(shopTab===0)PUP_KINDS.forEach((k,i)=>{
     const y=47+i*40,lv=save.up[k],d=PUPS[k];row(y,37);
     drawIcon(k,24,y+13);txt(d.short,34,y+5,1,'w');
-    for(let q=0;q<5;q++)f(34+q*7,y+16,6,3,q<lv?d.c:'#3a3643');
+    for(let q=0;q<5;q++){f(34+q*7,y+16,6,3.5,'k');f(34.5+q*7,y+16.5,5,2.5,q<lv?d.c:'#3a3346');if(q<lv)f(34.5+q*7,y+16.5,5,.5,'w')}
     txt(pupDur(k).toFixed(1)+'S'+(lv<5?' > '+(d.t*(1+.15*(lv+1))).toFixed(1)+'S':''),34,y+24,.5,'l');
     if(lv<5)priceBtn(UP_COST[lv],92,y+9,()=>save.up[k]++);else txt('MAX',101,y+15,1,'y');
   });
@@ -1478,7 +1539,7 @@ function drawShop(){
   else{
     OUTFITS.forEach((o,i)=>{
       const x=14+(i%3)*39,y=47+(i/3|0)*62,sel=o.id===shopSel,own=save.own.includes(o.id);
-      f(x,y,38,58,sel?'y':'#2c3d72');f(x+.5,y+.5,37,57,sel?'#1d2b53':'#151f3f');
+      card(x,y,38,58,sel);
       drawSpr(sel?RUN[(T*10|0)%4]:STAND,x+12,y+5,null,fitPal(o.id));
       txt(o.name,x+(38-tw(o.name,.5))/2,y+29,.5,'w');
       if(o.id===save.fit)txt('WEARING',x+(38-tw('WEARING',.5))/2,y+40,.5,'G');
@@ -1518,33 +1579,35 @@ function drawHud(){
       f(hx-5.5,55,11,2.5,'k');f(hx-5,55.5,10*Math.min(1,pT[k]/pMax[k]),1.5,PUPS[k].c);hx+=13}}
     if(hintT>0&&!paused){txt('LAVA IS CLOSE!','c',222,1,'y');if((T*4|0)%2===0)txt('DO NOT GET HIT AGAIN!','c',233,1,'w')}
     if(!paused){for(const x of [122,126]){f(x+.5,8.5,2,7,'k');f(x,8,2,7,'w')}btns.push({x:106,y:0,w:38,h:34,fn:pause})} // thumb-sized hit area
-    else if(resumeT>0)txt(Math.ceil(resumeT/.7),'c',96,3,'w');
+    else if(resumeT>0)heading(Math.ceil(resumeT/.7),96,3,'y','w','#8a4f00');
     else{
-      for(let y=0;y<H;y+=2)for(let x=(y>>1)&1;x<W;x+=2)f(x,y,1,1,'k');
-      txt('PAUSED','c',76,1.5,'o');
-      if((performance.now()/500|0)%2===0)txt('TAP TO RESUME','c',98,1,'w');
-      btn('SOUND: '+(muted?'OFF':'ON'),32,122,80,18,()=>setMute(!muted),{kind:muted?'off':'alt'});
-      btn('QUIT',32,146,80,18,quit,{kind:'off'});
+      dim();panel(20,60,104,108);
+      heading('PAUSED',70,1.5,'o','y','#8a2a00');
+      if((performance.now()/500|0)%2===0)txt('TAP TO RESUME','c',92,1,'w');
+      btn('SOUND: '+(muted?'OFF':'ON'),32,108,80,22,()=>setMute(!muted),{kind:muted?'off':'alt'});
+      btn('QUIT',32,135,80,22,quit,{kind:'off'});
     }
   }
   if(state==='dead'){
-    for(let y=0;y<H;y+=2)for(let x=(y>>1)&1;x<W;x+=2)f(x,y,1,1,'k');
-    f(15,38,114,170,'l');f(16,39,112,168,'k'); // solid panel so the text reads over lava
-    txt(deathKind==='fall'?'YOU FELL!':'TOO HOT!','c',46,1.5,'o');
-    txt('SCORE','c',62,.5,'l');txt(score(),'c',68,2,'w');
-    txt('HEIGHT '+m+'M   CLOSE CALLS '+closes,'c',88,.5,'l');
-    gemTxt('+'+gemCount,'c',97,1,'y');txt('BANK '+save.bank,'c',107,.5,'l');
-    if(newBest){if((T*4|0)%2)txt('NEW BEST!','c',115,1,'G')}else txt('BEST '+best,'c',117,.5,'y');
+    dim();panel(10,28,124,194);
+    const fell=deathKind==='fall';
+    heading(fell?'YOU FELL!':'TOO HOT!',38,2,fell?'#5a8cff':'o',fell?'b':'y',fell?'#1d2b53':'#8a2a00');
+    inset(30,60,84,30);txt('SCORE','c',63,.5,'l');txt(score(),'c',71,2,'w');
+    txt('HEIGHT '+m+'M   CLOSE CALLS '+closes,'c',95,.5,'l');
+    gemTxt('+'+gemCount,'c',103,1,'y');txt('BANK '+save.bank,'c',113,.5,'l');
+    if(newBest){if((T*4|0)%2)txt('NEW BEST!','c',120,1,'G')}else txt('BEST '+best,'c',121,.5,'y');
     // buttons wake up after a moment so a swipe that was already on its way can't press one
-    const ok=deadT>.8,rv=canRevive();let y=rv?128:136;
-    if(rv){btn('REVIVE',24,y,96,24,ok&&revive,{kind:'gold',sub:save.boost.revive>0?save.boost.revive+' IN STOCK':BOOSTS.revive.cost+' GEMS'});y+=27}
-    btn('RETRY',24,y,96,24,ok&&play,{kind:'go',sc:1.5});y+=27;
-    btn('SHOP',24,y,47,18,ok&&openShop,{kind:rv?'alt':'gold'});btn('HOME',73,y,47,18,ok&&(()=>{reset();state='title'}));
+    const ok=deadT>.8,rv=canRevive();let y=rv?131:140;
+    if(rv){btn('REVIVE',24,y,96,26,ok&&revive,{kind:'gold',sub:save.boost.revive>0?save.boost.revive+' IN STOCK':BOOSTS.revive.cost+' GEMS'});y+=29}
+    btn('RETRY',24,y,96,26,ok&&play,{kind:'go',sc:1.5});if(ok){arrow(19,y+9,1);arrow(125,y+9,-1)}y+=29;
+    btn('SHOP',24,y,47,20,ok&&openShop,{kind:rv?'alt':'gold'});btn('HOME',73,y,47,20,ok&&(()=>{reset();state='title'}));
   }
 }
 
 function draw(){
-  if(state==='shop'){drawBg();cx.globalAlpha=.8;f(0,0,W,H,'k');cx.globalAlpha=1;btns=[];drawShop();return}
+  // the finger that's down (before it lifts) presses the button under it
+  ptr=null;if(down&&!swiped){const r=cv.getBoundingClientRect();ptr={x:(sx0-r.left)/r.width*W,y:(sy0-r.top)/r.height*H}}
+  if(state==='shop'){drawBg();cx.globalAlpha=.45;f(0,0,W,H,'k');cx.globalAlpha=1;dim();btns=[];drawShop();return}
   cx.save();
   if(shake>0)cx.translate(Math.round((Math.random()-.5)*shake)*S,Math.round((Math.random()-.5)*shake)*S);
   drawBg();drawVines();drawGems();drawPups();drawTrapsBack();drawObstacles();drawPlayer();drawFlames();drawTrapsFront();drawLava();
