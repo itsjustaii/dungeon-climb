@@ -29,6 +29,7 @@ Add, remove or reorder anything. Check items off with [x].
       traps don't chase you into the lane you just escaped to; spikes fall a bit slower
 - [x] Fall only after climbing past the vine end (small hop first), not when hands reach it
 - [x] Lava surge: a hit brings the lava to your heels for ~4s, a second hit in that time burns you; ESCAPED +20 if you get clear
+- [x] Gem greed: bait gems (purple/red off the safe line), gem chain multiplier, one-time lava hint
 
 ## Next (after core feels right)
 - [x] Gem trails along the safe lines (reward + guide); tiered orange/purple/red (2/6/12 pts), rarer+richer colors the further you climb, bigger 4-sided rotating sprite (not coins)

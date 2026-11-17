@@ -201,6 +201,8 @@ const FD="A010101111101101B110101110101110C011100100100011D110101101101110E11110
 const F={};for(let i=0;i<FD.length;i+=16)F[FD[i]]=FD.substr(i+1,15);
 
 let best=0;try{best=+localStorage.getItem('lavaclimb_best')||0}catch(e){}
+// the "one more hit and you burn" hint shows the first few times the lava surges, then never again
+let hints=0;try{hints=+localStorage.getItem('lavaclimb_hint')||0}catch(e){}
 
 // game logic runs in 144x256 world units; drawing is S times finer
 const S=2;
@@ -228,13 +230,14 @@ function snd(f1,f2,d,type='square',vol=.05){
   o.connect(g).connect(ac.destination);o.start(t);o.stop(t+d)}catch(e){}
 }
 
-let state='title',T=0,p,camY,lavaY,spikes,waves,jets,traps,deck,known,lastKind,segs,genY,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes,gems,gemCount,gemY,gemLane,surge,caught,beat,paused=false,resumeT=0;
+let state='title',T=0,p,camY,lavaY,spikes,waves,jets,traps,deck,known,lastKind,segs,genY,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes,gems,gemCount,gemY,gemLane,surge,caught,beat,paused=false,resumeT=0,nextBaitY,baitKind,baitFails,chain,lastGemT,hintT;
 function reset(){
   p={lane:1,x:-6,y:0,stun:0,inv:0,anim:0,vy:0,prevLane:1,switchT:-9};
   camY=-20;lavaY=-24;spikes=[];waves=[];jets=[];traps=[];deck=[];known=new Set();lastKind=null;segs=[];genY=90;bubbles=[];parts=[];pops=[];
   nextY=WARM+100;it=0;playT=0;deadT=0;speed=42;shake=0;newBest=false;bonus=0;combo=0;comboT=-9;closes=0;
   gems=[];gemCount=0;gemY=40;gemLane=1;
   surge=0;caught=false;beat=0;paused=false;resumeT=0;
+  nextBaitY=WARM+100;baitKind=null;baitFails=0;chain=0;lastGemT=-9;hintT=0;
 }
 reset();
 
@@ -336,7 +339,47 @@ function placeGemRow(){
   const cand=[0,1,2].filter(l=>gapFree(l,y-4,y+4)&&!segs.some(s=>s.lane===l&&s.type==='F'&&!s.broken&&s.y0<y+4&&s.y1>y-4));
   if(!cand.length)return;
   gemLane=cand.includes(gemLane)?gemLane:cand.reduce((a,b)=>Math.abs(b-gemLane)<Math.abs(a-gemLane)?b:a);
-  gems.push({lane:gemLane,y,got:false,ph:Math.random()*10,tier:pickGemTier(diff(y))});
+  if(gems.some(g=>g.bait&&g.lane===gemLane&&Math.abs(g.y-y)<10))return;
+  gems.push({lane:gemLane,y,got:false,ph:Math.random()*10,tier:GEM_TIERS[0]});
+}
+// bait: purple and red gems sit OFF the safe line, where grabbing them is a risk you choose to take:
+//  frag = purple along a fragile vine; side = three purple running up to a break; stub = one red on the last bit before a break.
+// always optional, and only placed where the vine under it is whole and a neighbouring vine stays open to swipe onto.
+function placeBait(a,b){
+  // red stubs are the rare, nasty ones: none early, then up to about a third of all bait at the top
+  // (the kind is rolled once per bait and kept until it finds a spot, so the easy-to-place stubs don't crowd out the rest)
+  const d=diff(a),sp=spAt(a);
+  baitKind=baitKind||(d>=.1&&Math.random()<.12+.25*d?'stub':'purple');
+  const kinds=baitKind==='stub'?['stub']:Math.random()<.5?['frag','side']:['side','frag'];
+  const adjOpen=(l,y0,y1,gapsOnly)=>[l-1,l+1].some(q=>q>=0&&q<=2&&(gapsOnly?!segs.some(s=>s.lane===q&&s.type==='G'&&s.y0<y1&&s.y1>y0):clearAt(q,y0,y1)));
+  const put=(lane,y,t,kind)=>gems.push({lane,y,got:false,ph:Math.random()*10,tier:GEM_TIERS[t],bait:kind});
+  const taken=(l,y0,y1)=>gems.some(g=>g.bait&&g.lane===l&&g.y>y0-30&&g.y<y1+30);
+  for(const k of kinds){
+    if(k==='frag'){
+      const s=segs.find(s=>s.type==='F'&&!s.broken&&s.t<0&&s.y0>=a&&s.y1<b&&!taken(s.lane,s.y0,s.y1)&&adjOpen(s.lane,s.y0-10,s.y1+24,true));
+      if(!s)continue;
+      const len=s.y1-s.y0,n=len>=38?3:2,st=Math.min(12,(len-12)/(n-1));
+      for(let i=0;i<n;i++)put(s.lane,s.y0+5+i*st,1,k);
+      baitKind=null;return true;
+    }
+    const n=k==='stub'?1:3,off=k==='stub'?Math.max(8,sp*.12):Math.max(16,sp*.22);
+    for(const s of segs){
+      if(s.type!=='G'||s.y0<a||s.y0>=b)continue;
+      const l=s.lane,last=s.y0-off,first=last-(n-1)*12;
+      if(first<a||taken(l,first,last)||!clearAt(l,first-10,s.y0)||laneThreat(l,first-10,s.y0))continue;
+      // the way off: a whole neighbouring vine from the last gem to well past the break
+      if(!adjOpen(l,last-10,s.y0+40))continue;
+      for(let i=0;i<n;i++)put(l,first+i*12,k==='stub'?2:1,k);
+      baitKind=null;return true;
+    }
+  }
+  return false;
+}
+// gem chain: every gem collected in a row builds a multiplier on gem points; a hit or 2s without a gem breaks it
+const chainMult=()=>chain>=100?4:chain>=40?3:chain>=15?2:1;
+function breakChain(){
+  if(chainMult()>1){pops.push({s:'CHAIN LOST',x:p.x,y:p.y+30,t:0});snd(300,150,.15,'square',.04)}
+  chain=0;
 }
 // a short burst of bonus gems right above you after a close call (Jetpack Joyride style reward beat)
 function gemBurst(lane,y0){
@@ -385,10 +428,10 @@ function hit(){
   if(p.inv>0)return;
   const ny=p.y-6;
   if(!segs.some(s=>isGap(s)&&s.lane===p.lane&&ny+16<s.y1&&p.y+16>=s.y0))p.y=ny;
-  p.stun=.45;p.inv=1;shake=5;combo=0;snd(220,50,.25,'sawtooth',.08);
+  p.stun=.45;p.inv=1;shake=5;combo=0;breakChain();snd(220,50,.25,'sawtooth',.08);
   // second hit while the lava is still at your heels: it catches you. otherwise it surges up close.
   if(surge>0){caught=true;p.stun=9}
-  else{surge=SURGE;beat=0;p.inv=1.5;snd(60,180,.5,'sawtooth',.07)} // longer no-hit time, so one trap pattern can't land both hits
+  else{surge=SURGE;beat=0;p.inv=1.5;if(hints<3){hints++;hintT=3;try{localStorage.setItem('lavaclimb_hint',hints)}catch(e){}}snd(60,180,.5,'sawtooth',.07)} // longer no-hit time, so one trap pattern can't land both hits
 }
 
 // fire jets: a wall vent warns, then fire covers 1-2 lanes from its side.
@@ -864,6 +907,14 @@ function update(dt){
 
     while(genY<p.y+300)placeSection();
     while(gemY<p.y+180)placeGemRow();
+    // bait goes in above the top of the screen so it scrolls in instead of popping up; more of it the higher you climb
+    while(nextBaitY<p.y+200){
+      const ok=placeBait(Math.max(nextBaitY,p.y+192),p.y+285);
+      nextBaitY+=ok?(6-3.5*diff(nextBaitY)+Math.random()*2-1)*spAt(nextBaitY):60;
+      if(ok)baitFails=0;else if(++baitFails>=3){baitFails=0;baitKind=null} // no spot for this kind around here: roll again
+    }
+    if(chain&&T-lastGemT>2)breakChain();
+    if(hintT>0)hintT-=dt;
     // after each trap, keep `w` seconds of travel clear (less of it at high speed, so the late game stays busy)
     while(nextY<p.y+230){const w=spawnAt(nextY);nextY+=150-100*diff(nextY)+Math.random()*40+w*spAt(nextY)*(1-.35*diff(nextY))}
     for(const o of traps){
@@ -929,9 +980,13 @@ function update(dt){
     for(const g of gems){
       if(g.got)continue;
       if(g.lane===p.lane&&Math.abs(p.x-LX[g.lane])<5&&hands()>=g.y-5&&hands()<g.y+6){
-        g.got=true;bonus+=g.tier.pts;gemCount++;
+        const m0=chainMult();chain++;lastGemT=T;
+        const m=chainMult(),pts=g.tier.pts*m;
+        g.got=true;bonus+=pts;gemCount++;
+        if(m>m0){pops.push({s:'CHAIN X'+m,x:p.x,y:p.y+30,t:0});snd(700,1400,.15,'square',.05)}
+        else if(g.bait)pops.push({s:'+'+pts,x:LX[g.lane],y:g.y+10,t:0});
         for(let i=0;i<5;i++)parts.push({x:LX[g.lane]+Math.random()*4-2,y:g.y,vy:20+Math.random()*30,vx:(Math.random()-.5)*20,l:.35,c:g.tier.base});
-        snd(900,1500,.08,'square',.03);
+        snd(900+Math.min(chain,50)*10,1500+Math.min(chain,50)*10,.08,'square',.03);
       }
     }
     gems=gems.filter(g=>!g.got&&g.y>camY-20);
@@ -1129,13 +1184,16 @@ function drawHud(){
   txt(''+score(),16,8,2,'w');txt(m+'M',16,22,1,'l');
   if(combo>1&&T-comboT<3)txt('X'+combo,16+tw(''+score(),2)+4,8,1,'y');
   const hi='HI '+best;txt(hi,128-tw(hi,1),state==='play'?20:10,1,'y');
-  if(gemCount>0){drawGem(20,34,GEM_TIERS[0],0);txt('x'+gemCount,26,31,1,'y')}
+  if(gemCount>0){drawGem(20,34,GEM_TIERS[0],0);txt('x'+gemCount,26,31,1,'y');
+    // chain multiplier, blinking when it's about to run out
+    const cm=chainMult();if(cm>1&&state==='play'&&(T-lastGemT<1.2||(T*10|0)%2))txt('X'+cm,30+tw(''+gemCount,1)+3,31,1,'o')}
   for(const q of pops){const tx=Math.max(14,Math.min(130-tw(q.s,1),Math.round(q.x-tw(q.s,1)/2)));
     if(q.t<.7||(T*12|0)%2)txt(q.s,tx,sy(q.y)-q.t*20,1,'y')}
   if(state==='play'){
     const gap=p.y-lavaY,hgt=Math.max(0,Math.min(1,gap/110))*80;
     f(4,40,4,80,'n');f(4,120-hgt,4,hgt,gap<40?((T*8|0)%2?'r':'o'):'G');
     if(playT<2.5&&(T*3|0)%2===0)txt('SWIPE < >','c',110,1,'w');
+    if(hintT>0&&!paused){txt('LAVA IS CLOSE!','c',226,1,'y');if((T*4|0)%2===0)txt('DO NOT GET HIT AGAIN!','c',236,1,'w')}
     if(!paused){for(const x of [122,126]){f(x+.5,8.5,2,7,'k');f(x,8,2,7,'w')}}
     else if(resumeT>0)txt(''+Math.ceil(resumeT/.7),'c',100,4,'w');
     else{
