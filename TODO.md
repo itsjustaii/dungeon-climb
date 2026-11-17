@@ -34,10 +34,13 @@ Add, remove or reorder anything. Check items off with [x].
 ## Next (after core feels right)
 - [x] Gem trails along the safe lines (reward + guide); tiered orange/purple/red (2/6/12 pts), rarer+richer colors the further you climb, bigger 4-sided rotating sprite (not coins)
 - [x] Power-ups: shield, rope, magnet, double gems, lava cooled; on vines and between vines (swipe to grab)
-- [ ] Playtest the new difficulty with friends: lava surge window, bait from 260M, power-up frequency
+- [x] Power-up rework: shield and rope on timers too, no duplicates of one that's running, much rarer (14-24s apart),
+      placed off the gem trail, new sprites for all five, one HUD row with drain bars
+- [x] Gem bank + shop v1: power-up upgrades, boosts (starter shield, revive), outfits
+- [ ] Playtest the new difficulty with friends: lava surge window, bait from 260M, power-up frequency, shop prices
 - [ ] A "vehicle" moment (mine cart / bat ride)
 - [ ] Height zones with new scenery (dungeon -> crystal mine -> lava forge -> frozen depths)
-- [ ] Before launch: gem shop, outfits, gadgets, missions + ranks, end-of-run spin, daily reward
+- [ ] Before launch: gadgets, missions + ranks, end-of-run spin, daily reward
 - [ ] Playtest difficulty curve on a real phone (gaps/jets/spikes frequency)
 
 ## Feel / UX
@@ -55,7 +58,8 @@ Add, remove or reorder anything. Check items off with [x].
 - [x] Explorer: hit pose and fall pose
 - [x] Bricks, pillars, vines, lava, spikes redrawn at 2x detail
 - [ ] Fragile vine: still could be easier to tell apart from normal vines
-- [ ] Title text and HUD font still the old chunky style
+- [x] Title text and HUD font still the old chunky style (new 5x7 font, smoothed at big sizes)
+- [x] Title screen with PLAY / SHOP buttons, death screen with REVIVE / RETRY / SHOP / HOME, quit on pause
 - [ ] Cave entrance and lava pipe at the start still old style
 
 ## Android (Capacitor)

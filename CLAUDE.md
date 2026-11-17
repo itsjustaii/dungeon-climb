@@ -17,10 +17,15 @@ TODO.md tracks what's done and what's next. Design notes and fairness lessons: O
 - Gem chain: x2/x3/x4 gem points at 15/40/100 gems in a row; a hit or 2s without a gem breaks it
 - Lava surge: a hit brings the lava to your heels for ~4s; a second hit in that time burns you
 - Bait gems start at 260M, power-ups at 300M
-- Power-ups: shield (absorbs a hit) and rope (saves a fall) are held until used; magnet 8s, double gems 10s,
-  lava cooled 8s run on timers. Half sit on a vine, half float between two vines and are grabbed by swiping across
-- Power-ups spawn Subway Surfers style: random kind, random gaps (4-13s), different ones stack, same one refills its timer
-- Pause: top-right button, 3-2-1 on resume, auto-pauses when the app is hidden; sound on/off on the pause screen
+- Power-ups all run on timers: shield 12s (absorbs one hit), rope 12s (saves one fall), magnet 8s, double gems 10s,
+  lava cooled 8s. Shield and rope trigger on their own, the timer makes them a window to take risks in
+- Power-ups are rare (one every 14-24s of climbing) and come from a shuffled bag, never one that's still running.
+  About 2 in 3 sit on a vine one lane off the gem trail, the rest float between the trail's vine and a neighbour
+  and are grabbed by swiping across
+- Gems are banked between runs (orange 1, purple 3, red 6) and spent in the shop: power-up upgrades (5 levels,
+  +15% time each), boosts (starter shield, revive once per run) and outfits (palette swaps of the explorer)
+- Screens: title (PLAY / SHOP), shop (3 tabs), death (REVIVE / RETRY / SHOP / HOME). All drawn on the canvas with btn()
+- Pause: top-right button, 3-2-1 on resume, auto-pauses when the app is hidden; sound on/off and quit on the pause screen
 - Score = height + gems + close call bonuses (CLOSE / DODGE / CLUTCH), combos
 
 ## Fairness rules (don't break these)
@@ -28,12 +33,13 @@ TODO.md tracks what's done and what's next. Design notes and fairness lessons: O
 - Every warning is a real attack: fairness is checked before the warning shows, and a showing warning reserves its lane
 - Never aim at the lane the player just escaped to; never put fragile pieces on the only way through
 - Bait gems are always optional: the vine under them is whole and a neighbouring vine stays open past the break
-- Power-ups only go where the vines involved are whole and no trap is set up; between-vine ones need a safe landing
+- Power-ups only go where the vines involved are whole and no trap is set up; between-vine ones need a safe landing,
+  vine ones need the trail's vine next to them whole so you can swipe back
 - After changing generation, traps, bait or power-ups, run the bot: open `index.html?bot` (served, e.g. `python3 -m http.server`),
   then `botCheck()` and `botCheck(100,150,true)` in the console. It must print PASS (see tools/botcheck.js for what it checks)
 
 ## Plan
-- Next: friends playtest and tuning of the new stuff; then a vehicle moment, height zones, shop/missions
+- Next: friends playtest and tuning of the new stuff (power-up pacing, shop prices); then a vehicle moment, height zones, missions
 - Wrap with Capacitor for Android, publish on Play Store first
 - iOS later maybe (Apple fee is yearly)
 

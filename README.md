@@ -31,5 +31,10 @@ Height + bonus points for close calls:
 
 Chain them for combos (x2, x3...).
 
+## Power-ups and shop
+- **Power-ups** (from 300M): shield, rope, magnet, double gems, lava cooled. Each runs on a timer, shown top-left
+- **Gems** you collect are banked after every run
+- **Shop**: longer power-ups, a starter shield, a revive, and outfits for the explorer
+
 ## Tech
 Single HTML file, vanilla JavaScript + Canvas, no dependencies.

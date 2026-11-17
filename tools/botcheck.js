@@ -10,6 +10,11 @@
 //                     or with no open neighbouring vine at the break                -> must be 0
 //   pup.vineBad/betweenBad/noLanding   power-ups over a gap or fragile vine, or
 //                     between-vine ones with nowhere safe to land                   -> must be 0
+//   pup.noReturn      vine power-ups (one lane off the gem trail) where the trail's
+//                     vine next to them is broken, so there's no swiping back       -> must be 0
+//   pup.dupe          picked up a power-up while the same one was still running     -> must be 0
+//   pup.perMin / activePct   how many you're offered per minute and how much of the
+//                     time (after the first one) something is running               -> pacing, not pass/fail
 //   fellAfterRope     fell within 1s of a rope save (the save was wasted)           -> must be 0
 //   popIn             bait or power-ups that appeared already on screen             -> must be 0
 //   spikes            warnings shown vs spikes that actually fell (about 1% gap is
@@ -19,11 +24,13 @@ window.botCheck=function(runs=100,secs=150,greedy=false){
   const res={greedy,runs,fall:0,burn:0,survived:0,hits:0,shieldSaves:0,ropeSaves:0,fellAfterRope:0,wallRows:0,popIn:0,maxQuiet:0,
     spikes:{warned:0,fired:0},
     bait:{gems:0,firstM:1e9,onGap:0,noVine:0,noExit:0},
-    pup:{seen:0,got:0,between:0,gotBetween:0,firstM:1e9,vineBad:0,betweenBad:0,noLanding:0,fellAfterBetween:0},
+    pup:{seen:0,got:0,between:0,gotBetween:0,firstM:1e9,vineBad:0,betweenBad:0,noLanding:0,noReturn:0,dupe:0,fellAfterBetween:0,perMin:0,activePct:0},
     avgHeightM:0,avgScore:0,avgSecs:0,x4Runs:0};
-  // the bot's runs must not touch your real best score, hint counter or sound
-  const keep={best,hints,muted,ls:['lavaclimb_best','lavaclimb_hint'].map(k=>{try{return [k,localStorage.getItem(k)]}catch(e){return [k,null]}})};
-  muted=true;
+  // the bot's runs must not touch your real best score, hint counter, sound, gem bank or shop items
+  // (it plays with no upgrades and no boosts, so results don't depend on what you've bought)
+  const keep={best,hints,muted,save:JSON.stringify(save),ls:['lavaclimb_best','lavaclimb_hint','lavaclimb_save'].map(k=>{try{return [k,localStorage.getItem(k)]}catch(e){return [k,null]}})};
+  muted=true;for(const k in save.up)save.up[k]=0;save.boost={shield:0,revive:0};
+  let pupT=0,actT=0;
   const segAt=(l,a,b)=>segs.some(s=>s.lane===l&&s.y0<b&&s.y1>a);
   const gapAt=(l,a,b)=>segs.some(s=>s.lane===l&&s.type==='G'&&s.y0<b&&s.y1>a);
   for(let r=0;r<runs;r++){
@@ -49,7 +56,7 @@ window.botCheck=function(runs=100,secs=150,greedy=false){
         if(u.between){q.between++;const rr=10+spAt(u.y)*.3;
           if(segAt(u.l0,u.y-30,u.y+12)||segAt(u.l0+1,u.y-30,u.y+12))q.betweenBad++;
           if(segAt(u.l0,u.y,u.y+rr)&&segAt(u.l0+1,u.y,u.y+rr))q.noLanding++}
-        else if(segAt(u.lane,u.y-15,u.y+25))q.vineBad++}
+        else{if(segAt(u.lane,u.y-15,u.y+25))q.vineBad++;if(gapAt(u.back,u.y-15,u.y+25))q.noReturn++}}
 
       // steering
       let moved=false;
@@ -77,10 +84,13 @@ window.botCheck=function(runs=100,secs=150,greedy=false){
         }
       }
 
-      const inv0=p.inv,sh=shield,ro=rope;update(1/60);t+=1/60;
-      if(sh&&!shield)res.shieldSaves++;
-      if(ro&&!rope){res.ropeSaves++;ropeT=t}
-      if(p.inv>inv0+.4&&!(sh&&!shield)&&!(ro&&!rope))res.hits++;
+      const inv0=p.inv,run0=PUP_KINDS.filter(k=>pT[k]>0),got0=allPups.filter(u=>!u.got);update(1/60);t+=1/60;
+      const sh=pops.some(q=>q.t===0&&q.s==='SHIELD BROKE'),ro=pops.some(q=>q.t===0&&q.s==='ROPE SAVE!');
+      if(sh)res.shieldSaves++;
+      if(ro){res.ropeSaves++;ropeT=t}
+      if(p.inv>inv0+.4&&!sh&&!ro)res.hits++;
+      for(const u of got0)if(u.got&&run0.includes(u.kind))res.pup.dupe++;
+      if(p.y>=PUP_START){pupT+=1/60;if(PUP_KINDS.some(k=>pT[k]>0))actT+=1/60}
       mc=Math.max(mc,chain);
       for(const s of spikes){const st=sp.get(s)||{};if(s.st==='warn'&&s.w<s.sw&&!st.w){st.w=1;res.spikes.warned++}if(s.st==='fall'&&!st.f){st.f=1;res.spikes.fired++}sp.set(s,st)}
       const active=traps.some(o=>o.st!=='wait')||spikes.some(s=>s.st==='fall'||s.w<s.sw)||jets.some(j=>j.st==='warn'||j.st==='fire');
@@ -92,9 +102,10 @@ window.botCheck=function(runs=100,secs=150,greedy=false){
   }
   for(const k of ['avgHeightM','avgScore','avgSecs'])res[k]=Math.round(res[k]);
   res.maxQuiet=+res.maxQuiet.toFixed(1);res.bait.firstM=Math.round(res.bait.firstM);res.pup.firstM=Math.round(res.pup.firstM);
-  const bad=res.fellAfterRope+res.wallRows+res.popIn+res.bait.onGap+res.bait.noVine+res.bait.noExit+res.pup.vineBad+res.pup.betweenBad+res.pup.noLanding;
+  res.pup.perMin=+(res.pup.seen/Math.max(1,pupT)*60).toFixed(1);res.pup.activePct=Math.round(actT/Math.max(1,pupT)*100);
+  const bad=res.fellAfterRope+res.wallRows+res.popIn+res.bait.onGap+res.bait.noVine+res.bait.noExit+res.pup.vineBad+res.pup.betweenBad+res.pup.noLanding+res.pup.noReturn+res.pup.dupe;
   res.verdict=bad?'FAIL: '+bad+' fairness problems':'PASS: no fairness problems found';
-  reset();state='title';best=keep.best;hints=keep.hints;muted=keep.muted;
+  reset();state='title';best=keep.best;hints=keep.hints;muted=keep.muted;save=JSON.parse(keep.save);
   for(const [k,v] of keep.ls)try{v===null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}
   console.log(res.verdict);console.log(JSON.stringify(res,null,1));
   return res;

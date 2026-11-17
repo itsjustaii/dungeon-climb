@@ -27,10 +27,31 @@ const LX=[40,72,104];
 const WARM=400; // height of the slow, sparse warm-up at the start of a run
 // no bait until you've picked up some speed and height (260M, about 40s in): the early climb is orange trail only
 const BAIT_START=2080;
-// power-ups start a little after that (300M). shield and rope are held until used; the rest run on a timer (seconds).
+// power-ups start a little after that (300M). every one runs on a timer (seconds): shield and rope wait for the
+// hit or fall they save you from, but only while their timer lasts, so grabbing one is a window to take risks in.
 const PUP_START=2400;
-const PUPS={shield:{c:'b',name:'SHIELD'},rope:{c:'#e0a060',name:'ROPE'},magnet:{c:'r',name:'MAGNET',t:8},x2:{c:'y',name:'DOUBLE GEMS',t:10},cool:{c:'b',name:'LAVA COOLED',t:8}};
-const PUP_KINDS=['shield','magnet','x2','rope','cool']; // picked at random each time
+const PUPS={shield:{c:'b',name:'SHIELD',short:'SHIELD',t:12},rope:{c:'#e0a060',name:'ROPE',short:'ROPE',t:12},magnet:{c:'r',name:'MAGNET',short:'MAGNET',t:8},
+  x2:{c:'y',name:'DOUBLE GEMS',short:'X2 GEMS',t:10},cool:{c:'w',name:'LAVA COOLED',short:'COOL LAVA',t:8}};
+const PUP_KINDS=['shield','rope','magnet','x2','cool'];
+// rare enough that each one matters: this many seconds of climbing between them (was 4-13)
+const PUP_GAP=[14,24];
+
+// everything you keep between runs: gem bank, power-up upgrade levels, outfits, boosts in stock
+let save={bank:0,up:{shield:0,rope:0,magnet:0,x2:0,cool:0},own:['explorer'],fit:'explorer',boost:{shield:0,revive:0}};
+try{const q=JSON.parse(localStorage.getItem('lavaclimb_save')||'null');if(q)save={...save,...q,up:{...save.up,...q.up},boost:{...save.boost,...q.boost}}}catch(e){}
+const store=()=>{try{localStorage.setItem('lavaclimb_save',JSON.stringify(save))}catch(e){}};
+// shop: each upgrade level makes that power-up last 15% longer; boosts are used up one per run
+const UP_COST=[200,500,1000,2000,4000],BOOSTS={shield:{cost:50,t:40},revive:{cost:150}};
+const pupDur=k=>PUPS[k].t*(1+.15*save.up[k]);
+// outfits recolour the explorer (keys are the sprite colours in SPC below)
+const OUTFITS=[
+  {id:'explorer',name:'EXPLORER',cost:0,pal:{}},
+  {id:'miner',name:'MINER',cost:300,pal:{H:'#ffec27',h:'#ffa300',B:'#ffa300',b:'#ab5236',p:'#1d2b53',P:'#11193a',n:'#83769c',N:'#5f574f'}},
+  {id:'pirate',name:'PIRATE',cost:600,pal:{H:'#ff004d',h:'#be1250',B:'#fff1e8',b:'#c2c3c7',p:'#1d2b53',P:'#11193a',n:'#ab5236',N:'#742f29'}},
+  {id:'knight',name:'KNIGHT',cost:1200,pal:{H:'#c2c3c7',h:'#83769c',d:'#83769c',B:'#c2c3c7',b:'#83769c',p:'#83769c',P:'#5f574f',n:'#ff004d',N:'#be1250',w:'#5f574f'}},
+  {id:'mummy',name:'MUMMY',cost:2000,pal:{o:'#83769c',H:'#fff1e8',h:'#c2c3c7',d:'#c2c3c7',s:'#fff1e8',z:'#c2c3c7',B:'#fff1e8',b:'#c2c3c7',p:'#fff1e8',P:'#c2c3c7',n:'#83769c',N:'#5f574f',w:'#c2c3c7'}},
+  {id:'golden',name:'GOLDEN',cost:3000,pal:{o:'#ab5236',H:'#ffec27',h:'#ffa300',d:'#ffa300',s:'#ffec27',z:'#ffa300',B:'#ffec27',b:'#ffa300',p:'#ffa300',P:'#ab5236',n:'#fff1e8',N:'#ffec27',w:'#ab5236'}},
+];
 
 // explorer: authored at 16x24, upscaled 1.5x (Scale3x then halved) to 24x36 fine px = 12x18 world, auto outline
 const SPC={o:'#291814',H:'#ab5236',h:'#742f29',d:'#5a3a22',s:'#ffccaa',z:'#e0a07a',B:'#29adff',b:'#065ab5',n:'#c9a66b',N:'#8a6a45',p:'#5f574f',P:'#3a3438',w:'#5a3a22'};
@@ -57,11 +78,13 @@ function build(flip,...ls){
   g=scale3(g);
   const h=g.length,w=g[0].length,on=(r,c)=>r>=0&&r<h&&c>=0&&c<w&&g[r][c]!=='.',px=[];
   for(let r=-1;r<=h;r++)for(let c=-1;c<=w;c++){
-    if(on(r,c))px.push([c+1,r+1,SPC[g[r][c]]]);
+    if(on(r,c))px.push([c+1,r+1,g[r][c]]); // colour key, looked up in the outfit's palette when drawn
     else if(on(r-1,c)||on(r+1,c)||on(r,c-1)||on(r,c+1))px.push([c+1,r+1,null]);
   }
   return px;
 }
+const fitPal=id=>({...SPC,...(OUTFITS.find(o=>o.id===id)||OUTFITS[0]).pal});
+let PAL=fitPal(save.fit);
 // back view (climbing)
 const BACK=at(4,[
 "......HHHH......",
@@ -203,8 +226,54 @@ const STAND=build(false,SIDE,RARM_MID,at(19,[
 "......pp.pp.....",
 ".....www.www...."]));
 
-const FD="A010101111101101B110101110101110C011100100100011D110101101101110E111100110100111F111100110100100G011100101101011H101101111101101I111010010010111J001001001101010K101101110101101L100100100100111M101111111101101N110101101101101O010101101101010P110101110100100Q010101101110011R110101110101101S011100010001110T111010010010010U101101101101111V101101101101010W101101111111101X101101010101101Y101101010010010Z1110010101001110111101101101111101011001001011121100010101001113110001010001110410110111100100151111001100011106011100111101111711100101001001081111011111011119111101111001110!010010010000010-000000111000000:000010000010000<001010100010001>100010001010100.000000000000010?110001010000010+000010111010000";
-const F={};for(let i=0;i<FD.length;i+=16)F[FD[i]]=FD.substr(i+1,15);
+// 5x7 pixel font. sizes above the smallest are smoothed up (Scale2x/3x, like the sprites) so big text stays fine
+const FD={
+A:'01110 10001 10001 11111 10001 10001 10001',B:'11110 10001 10001 11110 10001 10001 11110',C:'01110 10001 10000 10000 10000 10001 01110',
+D:'11110 10001 10001 10001 10001 10001 11110',E:'11111 10000 10000 11110 10000 10000 11111',F:'11111 10000 10000 11110 10000 10000 10000',
+G:'01110 10001 10000 10111 10001 10001 01111',H:'10001 10001 10001 11111 10001 10001 10001',I:'01110 00100 00100 00100 00100 00100 01110',
+J:'00111 00010 00010 00010 00010 10010 01100',K:'10001 10010 10100 11000 10100 10010 10001',L:'10000 10000 10000 10000 10000 10000 11111',
+M:'10001 11011 10101 10101 10001 10001 10001',N:'10001 11001 10101 10011 10001 10001 10001',O:'01110 10001 10001 10001 10001 10001 01110',
+P:'11110 10001 10001 11110 10000 10000 10000',Q:'01110 10001 10001 10001 10101 10010 01101',R:'11110 10001 10001 11110 10100 10010 10001',
+S:'01111 10000 10000 01110 00001 00001 11110',T:'11111 00100 00100 00100 00100 00100 00100',U:'10001 10001 10001 10001 10001 10001 01110',
+V:'10001 10001 10001 01010 01010 00100 00100',W:'10001 10001 10001 10101 10101 11011 10001',X:'10001 10001 01010 00100 01010 10001 10001',
+Y:'10001 10001 01010 00100 00100 00100 00100',Z:'11111 00001 00010 00100 01000 10000 11111',
+0:'01110 10001 10011 10101 11001 10001 01110',1:'00100 01100 00100 00100 00100 00100 01110',2:'01110 10001 00001 00110 01000 10000 11111',
+3:'11110 00001 00001 01110 00001 00001 11110',4:'00010 00110 01010 10010 11111 00010 00010',5:'11111 10000 11110 00001 00001 10001 01110',
+6:'00110 01000 10000 11110 10001 10001 01110',7:'11111 00001 00010 00100 01000 01000 01000',8:'01110 10001 10001 01110 10001 10001 01110',
+9:'01110 10001 10001 01111 00001 00010 01100',
+'!':'00100 00100 00100 00100 00100 00000 00100','-':'00000 00000 00000 11111 00000 00000 00000',':':'00000 00100 00000 00000 00000 00100 00000',
+'<':'00010 00100 01000 10000 01000 00100 00010','>':'01000 00100 00010 00001 00010 00100 01000','.':'00000 00000 00000 00000 00000 00000 00100',
+'?':'01110 10001 00001 00010 00100 00000 00100','+':'00000 00100 00100 11111 00100 00100 00000','/':'00001 00001 00010 00100 01000 10000 10000',
+',':'00000 00000 00000 00000 00000 00100 01000',"'":'00100 00100 00000 00000 00000 00000 00000',x:'00000 00000 10001 01010 00100 01010 10001'};
+const F={};for(const k in FD)F[k]=FD[k].split(' ').map(r=>[...r].map(c=>c==='1'?'#':'.'));
+// bigger sizes: each font pixel becomes an n x n block, with corners cut or filled only where a stroke runs
+// diagonally, so diagonals come out smooth while B, D, E keep their square corners
+function fontUp(g,n){
+  const h=g.length,w=g[0].length,on=(r,c)=>r>=0&&r<h&&c>=0&&c<w&&g[r][c]==='#',t=n>>1,o=[];
+  for(let r=0;r<h*n;r++)o[r]=[];
+  for(let r=0;r<h;r++)for(let c=0;c<w;c++){
+    const E=on(r,c);
+    for(let i=0;i<n;i++)for(let j=0;j<n;j++){
+      let v=E;
+      for(const [dr,dc] of [[-1,-1],[-1,1],[1,-1],[1,1]]){
+        if((dr<0?i:n-1-i)+(dc<0?j:n-1-j)>=t)continue; // not in this corner of the block
+        const V=on(r+dr,c),Hz=on(r,c+dc),D=on(r+dr,c+dc);
+        if(E){if(!V&&!Hz&&!D&&(on(r+dr,c-dc)||on(r-dr,c+dc)))v=false}
+        else if(V&&Hz&&!D)v=true;
+      }
+      o[r*n+i][c*n+j]=v?'#':'.';
+    }
+  }
+  return o;
+}
+// glyph at n screen pixels per font pixel, as horizontal runs [x,y,w]
+const GLY={};
+function glyph(ch,n){
+  const k=ch+n;if(GLY[k])return GLY[k];
+  const m=n>1?fontUp(F[ch],n):F[ch],r=[];
+  m.forEach((row,y)=>{for(let x=0;x<row.length;x++)if(row[x]==='#'){let e=x;while(row[e+1]==='#')e++;r.push([x,y,e-x+1]);x=e}});
+  return GLY[k]=r;
+}
 
 let best=0;try{best=+localStorage.getItem('lavaclimb_best')||0}catch(e){}
 // the "one more hit and you burn" hint shows the first few times the lava surges, then never again
@@ -214,16 +283,23 @@ let hints=0;try{hints=+localStorage.getItem('lavaclimb_hint')||0}catch(e){}
 const S=2;
 const f=(x,y,w,h,c)=>{cx.fillStyle=P[c]||c;const x0=Math.round(x*S),y0=Math.round(y*S);cx.fillRect(x0,y0,Math.round((x+w)*S)-x0,Math.round((y+h)*S)-y0)};
 const hash=n=>{const s=Math.sin(n*127.1)*43758.5453;return s-Math.floor(s)};
-const tw=(s,sc)=>s.length*4*sc-sc;
+// text: sc is world units per font pixel (.5 small, 1 normal, 1.5 / 2 / 3 headings); x 'c' centres it
+const adv=ch=>ch===' '?4:6;
+const tw=(s,sc)=>{let w=-sc;for(const ch of s)w+=adv(ch)*sc;return w};
 function txt(s,x,y,sc,c,sh=true){
-  if(x==='c')x=(W-tw(s,sc))>>1;
-  if(sh)txt(s,x+sc,y+sc,sc,'k',false);
-  for(let i=0;i<s.length;i++){const g=F[s[i]];if(!g)continue;
-    for(let j=0;j<15;j++)if(g[j]==='1')f(x+i*4*sc+(j%3)*sc,y+(j/3|0)*sc,sc,sc,c)}
+  s=''+s;if(x==='c')x=(W-tw(s,sc))/2;
+  const n=sc*S,x0=Math.round(x*S),y0=Math.round(y*S),o=Math.min(n,2);
+  for(const [dx,col] of sh?[[o,'k'],[0,c]]:[[0,c]]){
+    cx.fillStyle=P[col]||col;let xx=x0+dx;
+    for(const ch of s){if(F[ch])for(const [gx,gy,gw] of glyph(ch,n))cx.fillRect(xx+gx,y0+dx+gy,gw,1);xx+=adv(ch)*n}
+  }
 }
-function drawSpr(px,x,y,tint){
+// the chunky "!" on trap warnings (kept in the old blocky style so warnings read exactly as before)
+function bang(x,y,sc,c){for(const [d,cc] of [[sc,'k'],[0,c]]){f(x+sc+d,y+d,sc,sc*3,cc);f(x+sc+d,y+d+sc*4,sc,sc,cc)}}
+// pal: colour keys -> colours (the explorer's outfit); sprites without one carry their colours directly
+function drawSpr(px,x,y,tint,pal){
   const bx=Math.round(x*S)-1,by=Math.round(y*S)-1;
-  for(const [c,r,col] of px){cx.fillStyle=col?(tint?P[tint]:col):'#120a10';cx.fillRect(bx+c,by+r,1,1)}
+  for(const [c,r,col] of px){cx.fillStyle=col?(tint?P[tint]:pal?pal[col]:col):'#120a10';cx.fillRect(bx+c,by+r,1,1)}
 }
 
 // sound
@@ -238,7 +314,7 @@ function snd(f1,f2,d,type='square',vol=.05){
   o.connect(g).connect(ac.destination);o.start(t);o.stop(t+d)}catch(e){}
 }
 
-let state='title',T=0,p,camY,lavaY,spikes,waves,jets,traps,deck,known,lastKind,segs,genY,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes,gems,gemCount,gemY,gemLane,surge,caught,beat,paused=false,resumeT=0,nextBaitY,baitKind,baitFails,chain,lastGemT,hintT,pups,nextPupY,pupN,pupKind,pupBetween,pupFails,shield,rope,pT,ropeFx,ropeSafeY;
+let state='title',T=0,p,camY,lavaY,spikes,waves,jets,traps,deck,known,lastKind,segs,genY,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes,gems,gemCount,gemY,gemLane,surge,caught,beat,paused=false,resumeT=0,nextBaitY,baitKind,baitFails,chain,lastGemT,hintT,pups,nextPupY,pupN,pupKind,pupBetween,pupFails,pupBag,pT,pMax,ropeFx,ropeSafeY,banked,revived;
 function reset(){
   p={lane:1,x:-6,y:0,stun:0,inv:0,anim:0,vy:0,prevLane:1,switchT:-9};
   camY=-20;lavaY=-24;spikes=[];waves=[];jets=[];traps=[];deck=[];known=new Set();lastKind=null;segs=[];genY=90;bubbles=[];parts=[];pops=[];
@@ -246,7 +322,8 @@ function reset(){
   gems=[];gemCount=0;gemY=40;gemLane=1;
   surge=0;caught=false;beat=0;paused=false;resumeT=0;
   nextBaitY=BAIT_START;baitKind=null;baitFails=0;chain=0;lastGemT=-9;hintT=0;
-  pups=[];nextPupY=PUP_START;pupN=0;pupKind=null;pupBetween=null;pupFails=0;shield=false;rope=false;pT={magnet:0,x2:0,cool:0};ropeFx={t:0,x0:0};ropeSafeY=-1;
+  pups=[];nextPupY=PUP_START;pupN=0;pupKind=null;pupBetween=null;pupFails=0;pupBag=[];ropeFx={t:0,x0:0};ropeSafeY=-1;
+  pT={shield:0,rope:0,magnet:0,x2:0,cool:0};pMax={...pT};banked=0;revived=false;
 }
 reset();
 
@@ -384,45 +461,55 @@ function placeBait(a,b){
   }
   return false;
 }
-// power-ups. half sit on a vine; the other half float BETWEEN two vines and are only collected by swiping
-// across at the right moment, so you plan a lane change around them instead of just riding a vine.
+// power-ups. placed relative to the gem trail so they read as a choice instead of turning up anywhere:
+// most sit on a vine one lane OFF the trail (you leave the gems to get it); the rest float BETWEEN the trail's vine
+// and a neighbour and are only collected by swiping across at the right moment.
 // both kinds only go where the vines involved are whole (no gap, no fragile) and no trap is set up.
 function rollPup(){
-  // Subway Surfers style: any kind, any time. different ones stack; picking up one that's already running
-  // just refills its timer. the only ones held back are a shield or rope you're already carrying.
-  const ok=PUP_KINDS.filter(k=>!(k==='shield'&&shield)&&!(k==='rope'&&rope));
-  return ok[Math.random()*ok.length|0];
+  // shuffled bag: all five come round before any repeats, and never one that's still running
+  if(!pupBag.length)pupBag=[...PUP_KINDS].sort(()=>Math.random()-.5);
+  const i=pupBag.findIndex(k=>pT[k]<=0);
+  return pupBag.splice(i<0?0:i,1)[0];
+}
+// the lane the gem trail will be in when it reaches height y (same rule as placeGemRow, minus traps that aren't set yet)
+function trailAt(y){
+  let l=gemLane;
+  for(let yy=gemY;yy<=y;yy+=14){const c=[0,1,2].filter(q=>clearAt(q,yy-4,yy+4));if(c.length&&!c.includes(l))l=c.reduce((a,b)=>Math.abs(b-l)<Math.abs(a-l)?b:a)}
+  return l;
 }
 function placePup(a,b){
+  if(pupKind&&pT[pupKind]>0){pupBag.push(pupKind);pupKind=null} // picked while waiting for a spot: don't offer it again yet
   pupKind=pupKind||rollPup();
-  if(pupBetween===null)pupBetween=Math.random()<.5; // decided once and kept while it looks for a spot, so the mix stays half and half
+  if(pupBetween===null)pupBetween=Math.random()<.35; // decided once and kept while it looks for a spot, so the mix holds
   const sp=spAt(a),add=o=>{pups.push({kind:pupKind,got:false,ph:Math.random()*6,between:pupBetween,...o});pupKind=pupBetween=null;pupN++;return true};
   for(let y=a;y<b;y+=8){
+    const t=trailAt(y);
     if(pupBetween){
       // both vines whole where you swipe across, and at least one of them stays whole long enough to react after landing
-      for(const l of Math.random()<.5?[0,1]:[1,0])
+      for(const l of t===0?[0]:t===2?[1]:Math.random()<.5?[0,1]:[1,0])
         if(clearAt(l,y-34,y+14)&&clearAt(l+1,y-34,y+14)&&(clearAt(l,y,y+12+sp*.35)||clearAt(l+1,y,y+12+sp*.35))&&!laneThreat(l,y-20,y+30)&&!laneThreat(l+1,y-20,y+30))
           return add({x:(LX[l]+LX[l+1])/2,y,l0:l});
     }else{
-      const s=Math.random()*3|0;
-      for(let i=0;i<3;i++){const l=(s+i)%3;
-        if(clearAt(l,y-20,y+30)&&!laneThreat(l,y-20,y+30)&&!gems.some(g=>g.bait&&g.lane===l&&Math.abs(g.y-y)<24))
-          return add({x:LX[l],y,lane:l})}
+      // its vine is whole, and so is the trail's vine next to it until you've had time to swipe back
+      for(const l of t===1?(Math.random()<.5?[0,2]:[2,0]):[1])
+        if(clearAt(l,y-20,y+30)&&clearAt(t,y-20,y+24+sp*.35)&&!laneThreat(l,y-20,y+30)&&!laneThreat(t,y-20,y+30)&&!gems.some(g=>g.bait&&g.lane===l&&Math.abs(g.y-y)<24))
+          return add({x:LX[l],y,lane:l,back:t});
     }
   }
   return false;
 }
+// start (or refill) a power-up's timer; t overrides the normal length (starter shield)
+function give(k,t){pT[k]=pMax[k]=t||pupDur(k)}
 function getPup(u){
-  const k=u.kind,d=PUPS[k];u.got=true;
-  if(k==='shield')shield=true;else if(k==='rope')rope=true;else pT[k]=d.t;
+  const k=u.kind,d=PUPS[k];u.got=true;give(k);
   if(k==='cool'&&!caught)surge=0; // cooled lava backs off straight away
   pops.push({s:d.name,x:p.x,y:p.y+30,t:0});
   for(let i=0;i<12;i++)parts.push({x:u.x+Math.random()*8-4,y:u.y+Math.random()*8-4,vx:(Math.random()-.5)*50,vy:Math.random()*50-10,l:.5,c:d.c});
   snd(520,1560,.25,'square',.05);
 }
-// rope: instead of falling, you're hauled to the nearest stretch of whole vine (any lane) that's long enough to
-// react on. you can't fall until your hands reach it (ropeSafeY), so a save is never wasted on a vine that breaks next.
-function useRope(){
+// hauled to the nearest stretch of whole vine (any lane) that's long enough to react on. you can't fall until your
+// hands reach it (ropeSafeY), so a save is never wasted on a vine that breaks next.
+function haul(){
   const need=20+speed*.35,h=hands();
   let best=p.lane,by=h+200,bc=1e9;
   for(let l=0;l<3;l++)for(let y=h;y<h+200;y+=4){
@@ -431,8 +518,12 @@ function useRope(){
     if(c<bc){bc=c;best=l;by=y}
     break;
   }
-  rope=false;ropeSafeY=by+2;ropeFx={t:.35,x0:p.x};
+  ropeSafeY=by+2;ropeFx={t:.35,x0:p.x};
   p.prevLane=p.lane;p.switchT=T;p.lane=best;p.inv=Math.max(p.inv,1);shake=3;
+}
+// rope: instead of falling, it hauls you to safety (once: that uses it up)
+function useRope(){
+  pT.rope=0;haul();
   pops.push({s:'ROPE SAVE!',x:p.x,y:p.y+30,t:0});snd(300,900,.2,'square',.06);
 }
 // gem chain: every gem collected in a row builds a multiplier on gem points; a hit or 2s without a gem breaks it
@@ -471,27 +562,41 @@ function move(d){
   for(const u of pups)if(u.between&&!u.got&&u.x>xa&&u.x<xb&&u.y>p.y-10&&u.y<p.y+32)getPup(u);
 }
 function tap(px,py){
-  if(state==='play'){
-    const r=cv.getBoundingClientRect(),x=px===undefined?-1:(px-r.left)/r.width*W,y=px===undefined?-1:(py-r.top)/r.height*H;
-    if(paused){
-      if(resumeT<=0&&y>140&&y<166)setMute(!muted); // the SOUND line on the pause screen
-      else resume();
-    }
-    else if(x>106&&y>=0&&y<34)pause(); // pause button: top-right corner, with a thumb-sized hit area
+  if(px===undefined){ // space / enter: the main action on each screen
+    if(state==='title'||state==='dead'&&deadT>.8)play();else if(state==='play'&&paused)resume();
     return;
   }
-  if(state==='title'){state='intro';snd(330,660,.15)}
-  else if(state==='dead'&&deadT>.8){reset();state='intro';snd(330,660,.15)}
+  const r=cv.getBoundingClientRect(),x=(px-r.left)/r.width*W,y=(py-r.top)/r.height*H;
+  const b=btns.find(b=>x>=b.x-1&&x<b.x+b.w+1&&y>=b.y-1&&y<b.y+b.h+1);
+  if(b)b.fn();else if(state==='play'&&paused)resume(); // anywhere else on the pause screen resumes
 }
 function die(kind){
   deadY=p.y;state='dead';deathKind=kind;deadT=0;p.vy=kind==='fall'?55:0;shake=6; // a fall starts with a small hop off the vine end
-  if(score()>best){best=score();newBest=true;try{localStorage.setItem('lavaclimb_best',best)}catch(e){}}
+  endRun();
   snd(440,40,.8,'sawtooth',.07);
 }
+// best score and the gems you collected go in the bank (only what's new, if you revive and die again)
+function endRun(){
+  if(score()>best){best=score();newBest=true;try{localStorage.setItem('lavaclimb_best',best)}catch(e){}}
+  save.bank+=gemCount-banked;banked=gemCount;store();
+}
+// revive (once per run): back on the nearest whole vine, lava pushed away, a 3-2-1 and a moment of no-hit time.
+// uses one from stock, or buys one on the spot
+const canRevive=()=>!revived&&(save.boost.revive>0||save.bank>=BOOSTS.revive.cost);
+function revive(){
+  if(state!=='dead'||!canRevive())return;
+  if(save.boost.revive>0)save.boost.revive--;else save.bank-=BOOSTS.revive.cost;
+  store();revived=true;state='play';
+  p.y=deadY;p.vy=0;p.stun=0;caught=false;surge=0;haul();p.inv=2.5;shake=0;
+  lavaY=Math.min(lavaY,p.y-FAR);
+  paused=true;resumeT=RESUME;snd(330,990,.3,'square',.05);
+}
+function play(){reset();state='intro';snd(330,660,.15)}
+function quit(){endRun();reset();state='title'}
 function hit(){
   if(p.inv>0)return;
-  if(shield){ // shield takes the hit: no stun, no lava surge, chain kept
-    shield=false;p.inv=1;shake=3;pops.push({s:'SHIELD BROKE',x:p.x,y:p.y+30,t:0});snd(900,200,.25,'square',.06);
+  if(pT.shield>0){ // shield takes the hit: no stun, no lava surge, chain kept
+    pT.shield=0;p.inv=1;shake=3;pops.push({s:'SHIELD BROKE',x:p.x,y:p.y+30,t:0});snd(900,200,.25,'square',.06);
     for(let i=0;i<14;i++)parts.push({x:p.x+Math.random()*16-8,y:p.y+Math.random()*18,vx:(Math.random()-.5)*70,vy:Math.random()*60-10,l:.5,c:Math.random()<.5?'b':'w'});
     return;
   }
@@ -661,12 +766,12 @@ function wallExt(o){
 // big warnings: a lane glow, a large "!" and an arrow, kept below the score so they never hide behind it
 function laneWarn(x,c){
   cx.globalAlpha=.14;f(x-7,0,14,64,c);cx.globalAlpha=1;
-  txt('!',x-4.5,34,3,c);for(let k=0;k<4;k++)f(x-3.5+k,51+k,7-2*k,1,c);
+  bang(x-4.5,34,3,c);for(let k=0;k<4;k++)f(x-3.5+k,51+k,7-2*k,1,c);
 }
 function sideWarn(side,c){
   const x=side<0?15:120;
   cx.globalAlpha=.14;f(side<0?12:118,22,14,52,c);cx.globalAlpha=1;
-  txt('!',x,34,3,c);for(let k=0;k<4;k++)f(side<0?x+12+k:x-3-k,40+k,1,7-2*k,c);
+  bang(x,34,3,c);for(let k=0;k<4;k++)f(side<0?x+12+k:x-3-k,40+k,1,7-2*k,c);
 }
 // snake pieces: banded body segment and a head with eyes and a flicking tongue (tx,ty = tongue direction)
 function snakeSeg(x,y,i,r=2.75){f(x-r-.5,y-2.25,r*2+1,4.5,'#291814');f(x-r,y-1.75,r*2,3.5,['r','y','#291814'][i%3]);f(x-r+.5,y-1.75,1.5,.5,'w')}
@@ -783,7 +888,7 @@ const TR={
       const n=Math.max(1,Math.round(Math.hypot(hx-x,hy-(y-7))/2.5));
       for(let i=1;i<n;i++)snakeSeg(x+(hx-x)*i/n,(y-7)+(hy-(y-7))*i/n,i,2.25);
       snakeHead(hx,hy,o.dir||0,o.st==='idle'?-1:0);
-      if(o.st==='rear'&&(T*10|0)%2)txt('!',x+(o.dir||0)*10-1,y-26,1,'r');
+      if(o.st==='rear'&&(T*10|0)%2)bang(x+(o.dir||0)*10-1,y-26,1,'r');
     },
   },
   // lava geysers: one lane early on; later, sequences like Jetpack Joyride lasers:
@@ -840,7 +945,7 @@ const TR={
           cx.globalAlpha=on?.28:.12;f(x-6,0,12,ly,'o');cx.globalAlpha=1;
           for(let yy=ly-6;yy>0;yy-=8)f(x-.5,yy,1,3,on?'y':'o');
           for(let i=0;i<5;i++)f(x-5+hash(i+l*9+(T*12|0))*10,ly-1.5-hash(i*7+l+(T*12|0))*6,1.5,1.5,i%2?'y':'o');
-          if(on)txt('!',x-1,ly-22,2,'y');
+          if(on)bang(x-1,ly-22,2,'y');
         } else if(s.ph==='erupt'||s.ph==='end'){
           const top=sy(s.top),bot=Math.min(H+2,sy(lavaY));
           if(bot<=top)continue;
@@ -948,14 +1053,15 @@ function update(dt){
   parts=parts.filter(q=>q.l>0);
   for(const q of pops)q.t+=dt;
   pops=pops.filter(q=>q.t<1);
-  if(state==='title')return;
+  if(state==='title'||state==='shop')return;
   if(state==='intro'){
     it+=dt;
     if(it<1.3){p.x=-6+78*(it/1.3);p.y=0;p.anim+=dt*10}
     else if(it<2){p.x=72;if(shake<1.5)shake=1.5;if(Math.random()<.15)snd(60,40,.12,'triangle',.08)}
     if(it>=1.6)lavaY+=14*dt;
     if(it>=2){const k=Math.min(1,(it-2)/.4);p.y=22*k+Math.sin(k*Math.PI)*10;
-      if(k>=1){state='play';playT=0;p.y=22}}
+      if(k>=1){state='play';playT=0;p.y=22;
+        if(save.boost.shield>0){save.boost.shield--;store();give('shield',BOOSTS.shield.t)}}} // starter shield from the shop
   } else if(state==='play'){
     playT+=dt;
     speed=spAt(p.y);
@@ -984,11 +1090,10 @@ function update(dt){
     }
     while(nextPupY<p.y+200){
       const ok=placePup(Math.max(nextPupY,p.y+192),p.y+285);
-      // random gaps (4 to 13s): short ones overlap with whatever is still running, long ones leave you with nothing
-      nextPupY+=ok?(4+Math.random()*9)*spAt(nextPupY):80;
-      if(ok)pupFails=0;else if(++pupFails>=4){pupFails=0;pupBetween=!pupBetween} // no room for that kind of spot here: try the other
+      nextPupY+=ok?(PUP_GAP[0]+Math.random()*(PUP_GAP[1]-PUP_GAP[0]))*spAt(nextPupY):80;
+      if(ok)pupFails=0;else if(++pupFails>=(pupBetween?4:9)){pupFails=0;pupBetween=!pupBetween} // no room for that kind of spot here: try the other
     }
-    for(const k in pT)if(pT[k]>0)pT[k]-=dt;
+    for(const k in pT)if(pT[k]>0&&(pT[k]-=dt)<=0)snd(500,250,.15,'square',.03); // ran out
     if(ropeFx.t>0)ropeFx.t-=dt;
     for(const u of pups)if(!u.got&&!u.between&&u.lane===p.lane&&Math.abs(p.x-u.x)<5&&hands()>=u.y-6&&hands()<u.y+10)getPup(u);
     pups=pups.filter(u=>!u.got&&u.y>camY-20);
@@ -1061,7 +1166,7 @@ function update(dt){
       if((pT.magnet>0||g.lane===p.lane&&Math.abs(p.x-LX[g.lane])<5)&&hands()>=g.y-5&&hands()<g.y+6){ // magnet: any lane
         const m0=chainMult();chain++;lastGemT=T;
         const m=chainMult(),pts=g.tier.pts*m*(pT.x2>0?2:1);
-        g.got=true;bonus+=pts;gemCount++;
+        g.got=true;bonus+=pts;gemCount+=g.tier.pts/2; // bank value: orange 1, purple 3, red 6
         if(m>m0){pops.push({s:'CHAIN X'+m,x:p.x,y:p.y+30,t:0});snd(700,1400,.15,'square',.05)}
         else if(g.bait)pops.push({s:'+'+pts,x:LX[g.lane],y:g.y+10,t:0});
         for(let i=0;i<5;i++)parts.push({x:LX[g.lane]+Math.random()*4-2,y:g.y,vy:20+Math.random()*30,vx:(Math.random()-.5)*20,l:.35,c:g.tier.base});
@@ -1070,7 +1175,7 @@ function update(dt){
     }
     gems=gems.filter(g=>!g.got&&g.y>camY-20);
 
-    if(hands()>=ropeSafeY)for(const s of segs)if(isGap(s)&&s.lane===p.lane&&Math.abs(p.x-LX[s.lane])<5&&grip()>=s.y0&&hands()<s.y1){if(rope)useRope();else die('fall');break}
+    if(hands()>=ropeSafeY)for(const s of segs)if(isGap(s)&&s.lane===p.lane&&Math.abs(p.x-LX[s.lane])<5&&grip()>=s.y0&&hands()<s.y1){if(pT.rope>0)useRope();else die('fall');break}
     if(state==='play'&&lavaY>=p.y+2)die('burn');
   } else if(state==='dead'){
     deadT+=dt;lavaY+=10*dt;
@@ -1175,23 +1280,39 @@ function drawGems(){
     drawGem(LX[g.lane]+(p.x-LX[g.lane])*pull,ys+Math.sin(T*3+g.ph)*.8,g.tier,g.ph);
   }
 }
-function drawIcon(k,x,y){
-  if(k==='shield'){f(x-3,y-3,6,4,'b');f(x-2,y+1,4,1,'b');f(x-1,y+2,2,1,'b');f(x-2,y-2,1,2,'w')}
-  else if(k==='rope'){const c='#e0a060';f(x-2,y-3,4,1,c);f(x-2,y+2,4,1,c);f(x-3,y-2,1,4,c);f(x+2,y-2,1,4,c);f(x+2,y+2,2,1,c);f(x-1,y-1,2,2,'h')}
-  else if(k==='magnet'){f(x-3,y-3,2,5,'r');f(x+1,y-3,2,5,'r');f(x-3,y+1,6,2,'r');f(x-3,y-3,2,1.5,'w');f(x+1,y-3,2,1.5,'w')}
-  else if(k==='x2')txt('X2',x-3.5,y-2.5,1,'y',false);
-  else{f(x-.5,y-3,1,6,'b');f(x-3,y-.5,6,1,'b');for(const [a,b] of [[-2,-2],[1,-2],[-2,1],[1,1]])f(x+a,y+b,1,1,'w');f(x-.5,y-.5,1,1,'w')}
-}
+// power-up pickups: each its own shape and colour (authored small, upscaled 1.5x and outlined like the creatures)
+const PUP_SPR={
+  shield:mkSpr([
+    ".wwwwwwwwwww.","wBBBBBwbbbbbw","wBBBBBwbbbbbw","wBBBBBwbbbbbw","wBBBBBwbbbbbw","wwwwwwwwwwwww","wbbbbbwBBBBBw",
+    "wbbbbbwBBBBBw","wbbbbbwBBBBBw",".wbbbbwBBBBw.","..wbbbwBBBw..","...wbbwBBw...","....wwwww...."],{w:'#fff1e8',B:'#29adff',b:'#065ab5'}),
+  rope:mkSpr([
+    "....OOOOO....","..OOoOOoOOO..",".OoOOOOOOOoO.",".OOO.....OOO.","OoO.......OoO","OOO.......OOO","OOO.......OoO",
+    "OoO.......OOO",".OOO.....OOO.",".OoOOOOOOoOO.","..OOOoOOoOOOO","....OOOOO..oO","...........OO"],{O:'#e0a060',o:'#8a5a2b'}),
+  magnet:mkSpr([
+    "wwww.....wwww","wwww.....wwww","llll.....llll","RRRr.....RRRr","RRRr.....RRRr","RRRr.....RRRr","RRRr.....RRRr",
+    "RRRRr...RRRRr","RRRRRrrrRRRRr",".RRRRRRRRRRr.","..RRRRRRRRr..","...rrrrrrr..."],{w:'#fff1e8',l:'#c2c3c7',R:'#ff004d',r:'#be1250'}),
+  x2:mkSpr([
+    "...o.........","..ooO........","..ooO....y...",".oooOO..yyY..",".oooOO..yyY..","oooooOOyyyYY.",".oooOOyywyYY.",
+    ".oooOyyyyyYYY","..ooO.yyyYY..","..ooO.yyyYY..","...o...yyY...",".......yyY...","........y...."],{o:'#ffa300',O:'#a85e00',y:'#ffec27',Y:'#ffa300',w:'#fff1e8'}),
+  cool:mkSpr([
+    "......w......","....w.w.w....",".....www.....",".w....w....w.","..w.w.w.w.w..","...w.cwc.w...","wwwwwwwwwwwww",
+    "...w.cwc.w...","..w.w.w.w.w..",".w....w....w.",".....www.....","....w.w.w....","......w......"],{w:'#fff1e8',c:'#29adff'}),
+  revive:mkSpr([
+    "..RRR...RRR..",".RRRRR.RRRRR.","RRwwRRRRRRRRR","RRwRRRRRRRRRr","RRRRRRRRRRRRr","RRRRRRRRRRRRr",".RRRRRRRRRRr.",
+    "..RRRRRRRRr..","...RRRRRRr...","....RRRRr....",".....RRr.....","......r......"],{R:'#ff004d',r:'#be1250',w:'#fff1e8'}),
+};
+function drawIcon(k,x,y){const q=PUP_SPR[k];drawSpr(q,x-q.w/2,y-q.h/2)}
 function drawPups(){
   for(const u of pups){
     if(u.got)continue;
     const y=sy(u.y)+Math.sin(T*4+u.ph)*1.2,x=u.x,c=PUPS[u.kind].c;
-    if(y<-12||y>H+12)continue;
-    // a dotted line across the two vines shows a between-vines one is grabbed by swiping through it
-    if(u.between)for(let xx=LX[u.l0]+3;xx<LX[u.l0+1]-2;xx+=3)if(Math.abs(xx-x)>6)f(xx,y-.5,1.5,1,(xx+(T*6|0))%2<1?'w':c);
-    f(x-5,y-4,10,8,'k');f(x-4,y-5,8,10,'k');
-    const on=(T*6|0)%2;
-    f(x-4,y-5,8,1,on?'w':c);f(x-4,y+4,8,1,on?'w':c);f(x-5,y-4,1,8,on?'w':c);f(x+4,y-4,1,8,on?'w':c);
+    if(y<-14||y>H+14)continue;
+    // between two vines: arrows on both sides run in toward it (swipe across to grab it)
+    if(u.between)for(const d of [-1,1])for(let i=0;i<2;i++){
+      const ax=x-d*(15-i*4-(T*8%4|0)*.5);for(let k=-2;k<=2;k++)f(ax+d*(2-Math.abs(k))-.5,y+k-.5,1,1,(i+(T*4|0))%2?'w':c)}
+    // soft glow and a few orbiting sparkles so it stands apart from the gems
+    cx.globalAlpha=.16+.08*Math.sin(T*6+u.ph);f(x-8,y-4,16,8,c);f(x-6,y-6,12,12,c);f(x-4,y-8,8,16,c);cx.globalAlpha=1;
+    for(let i=0;i<4;i++){const an=T*2.5+i*1.571;f(x+Math.cos(an)*9.5-.5,y+Math.sin(an)*9.5-.5,1,1,i%2?'w':c)}
     drawIcon(u.kind,x,y);
   }
 }
@@ -1267,76 +1388,163 @@ function drawPlayer(){
   if(p.inv>0&&state==='play'&&(T*20|0)%2)return;
   const x=p.x-6,y=sy(p.y)-18;
   const tint=state==='dead'&&deathKind==='burn'?((T*10|0)%2?'r':'k'):null;
-  if(state==='intro'&&it<1.3){const i=(p.anim|0)%4;drawSpr(RUN[i],x,y-(i%2?.5:0),tint)}
-  else if(state==='intro'&&it<2)drawSpr(STAND,x,y,tint);
-  else if(state==='dead')drawSpr(FALL,x,y,tint);
-  else if(p.stun>0)drawSpr(HIT,x,y,tint);
-  else drawSpr(CLIMB[(p.anim|0)%4],x,y,tint);
-  if(state==='intro'&&it>=1.3&&it<2&&(T*8|0)%2)txt('!',x+5,y-8,1,'y');
+  if(state==='intro'&&it<1.3){const i=(p.anim|0)%4;drawSpr(RUN[i],x,y-(i%2?.5:0),tint,PAL)}
+  else if(state==='intro'&&it<2)drawSpr(STAND,x,y,tint,PAL);
+  else if(state==='dead')drawSpr(FALL,x,y,tint,PAL);
+  else if(p.stun>0)drawSpr(HIT,x,y,tint,PAL);
+  else drawSpr(CLIMB[(p.anim|0)%4],x,y,tint,PAL);
+  if(state==='intro'&&it>=1.3&&it<2&&(T*8|0)%2)bang(x+5,y-8,1,'y');
   if(state==='play'){
-    if(shield)for(let a=0;a<16;a++){const an=a/16*6.283+T*2;f(p.x+Math.cos(an)*9-.5,y+9+Math.sin(an)*11-.5,1,1,a%2?'b':'w')}
+    // what's running shows on the explorer himself (each blinks for its last 2 seconds): shield bubble, rope coil
+    // on the hip, and a small effect for the rest: gems-in dots, gold sparkles, frost
+    const on=k=>pT[k]>2||pT[k]>0&&(T*8|0)%2;
+    if(on('shield')){
+      cx.globalAlpha=.13;for(let dy=-13;dy<=13;dy++){const hw=10*Math.sqrt(1-dy*dy/182);f(p.x-hw,y+9+dy,hw*2,1,'b')}cx.globalAlpha=1;
+      for(let a=0;a<72;a++){const an=a/72*6.283;f(p.x+Math.cos(an)*10.5-.25,y+9.5+Math.sin(an)*13.5-.25,.5,.5,(a+(T*14|0))%18<4?'w':'b')}
+      f(p.x-6.5,y+1,.5,3,'w');f(p.x-6,y,.5,1,'w');
+    }
     if(ropeFx.t>0)f(Math.min(ropeFx.x0,p.x),y+4,Math.abs(ropeFx.x0-p.x),1,'#e0a060');
     if(hands()<ropeSafeY)f(p.x-.5,sy(ropeSafeY),1,Math.max(0,y+2-sy(ropeSafeY)),'#e0a060'); // hauled up the rope
-    // what you're carrying shows on the explorer himself: rope coil on the hip, timed power-ups as icons over
-    // his head (blinking when nearly out) plus a small effect each: gems-in dots, gold sparkles, frost
-    if(rope){const c='#e0a060';f(p.x+5,y+10,3,1,c);f(p.x+5,y+13,3,1,c);f(p.x+4,y+11,1,2,c);f(p.x+8,y+11,1,2,c)}
-    const act=['magnet','x2','cool'].filter(k=>pT[k]>0);
-    act.forEach((k,i)=>{if(pT[k]>1.5||(T*8|0)%2){const ix=p.x+(i-(act.length-1)/2)*9;f(ix-4,y-11,8,8,'k');drawIcon(k,ix,y-7)}}); // dark tile so they read over vines and gems
+    if(on('rope')){const c='#e0a060';f(p.x+5,y+10,3,1,c);f(p.x+5,y+13,3,1,c);f(p.x+4,y+11,1,2,c);f(p.x+8,y+11,1,2,c)}
     if(pT.magnet>0)for(let i=0;i<4;i++){const r=12-((T*24+i*3)%10),s=i%2?1:-1;f(p.x+s*r-.5,y+5+i*3,1,1,'r')}
     if(pT.x2>0)for(let i=0;i<5;i++){const h=hash(i*13+(T*6|0));if(h>.4)f(p.x-8+hash(i*7+(T*6|0)+3)*16,y+hash(i*5+(T*6|0)+9)*18,1,1,h>.7?'w':'y')}
     if(pT.cool>0)for(let i=0;i<5;i++){const yy=(T*14+i*5)%20;f(p.x-8+hash(i*31)*16+Math.sin(T*3+i)*1.5,y-1+yy,1,1,i%2?'b':'w')}
   }
 }
 
-function drawHud(){
-  if(state==='title'){
-    txt('DUNGEON','c',40,4,'o');txt('CLIMB','c',64,4,'G');
-    if((T*2|0)%2===0)txt('TAP TO START','c',140,1,'w');
-    txt('SWIPE OR ARROWS','c',156,1,'l');
-    txt('HI '+best,'c',172,1,'y');
-    return;
+// buttons are drawn and registered every frame; a tap runs the one under it
+let btns=[];
+const BTN={go:['#00a84a','#4dff8a','#00632c','w'],alt:['#2c3d72','#5a74c4','#151f3f','w'],gold:['#d98600','#ffd04a','#8a4f00','w'],off:['#2a2730','#45404f','#16141b','#83769c']};
+// o: kind (colours), sc (label size), gem (gem in front of the label, for prices), sub (small second line)
+function btn(label,x,y,w,h,fn,o={}){
+  const [face,hi,lo,tc]=BTN[o.kind||'alt'],sc=o.sc||1;
+  f(x,y,w,h,'k');f(x+.5,y+.5,w-1,h-1,face);f(x+.5,y+.5,w-1,1,hi);f(x+.5,y+h-2,w-1,1.5,lo);
+  const g=o.gem?8:0,lx=x+(w-tw(label,sc)-g)/2,ly=y+(h-7*sc-(o.sub?6:0))/2-.5;
+  if(g)drawGem(lx+3,ly+3.5*sc,GEM_TIERS[0],0);
+  txt(label,lx+g,ly,sc,tc);
+  if(o.sub)txt(o.sub,x+(w-tw(o.sub,.5))/2,ly+7*sc+2.5,.5,tc);
+  if(fn)btns.push({x,y,w,h,fn});
+}
+// a number with a gem in front; x is the left edge, 'c' to centre, or {r} to right-align
+function gemTxt(v,x,y,sc,c){
+  const w=tw(''+v,sc)+8;x=x==='c'?(W-w)/2:x.r!==undefined?x.r-w:x;
+  drawGem(x+3,y+3.5*sc,GEM_TIERS[0],0);txt(v,x+8,y,sc,c);
+}
+function logo(s,y,c,hi){
+  const a=33,x0=Math.round((W*S-(s.length*a-3))/2),y0=y*S;
+  const put=(dx,dy,col,top)=>{cx.fillStyle=P[col]||col;[...s].forEach((ch,i)=>{for(const [gx,gy,gw] of glyph(ch,6))if(!top||gy<top)cx.fillRect(x0+i*a+gx+dx,y0+gy+dy,gw,1)})};
+  for(const [dx,dy] of [[-2,0],[2,0],[0,-2],[0,2],[-2,-2],[2,-2],[-2,2],[2,2],[-2,5],[0,5],[2,5]])put(dx,dy,'k');
+  put(0,0,c);put(0,0,hi,17);
+}
+function drawTitle(){
+  logo('DUNGEON',30,'o','y');logo('CLIMB',57,'#00c040','#7dff6a');
+  gemTxt(save.bank,{r:130},8,1,'y');
+  txt('BEST '+best,'c',90,1,'y');
+  btn('PLAY',30,116,84,26,play,{kind:'go',sc:1.5});
+  btn('SHOP',30,148,84,20,openShop,{kind:'gold'});
+  if(save.boost.shield>0){const s='x'+save.boost.shield+' READY',x0=(W-tw(s,.5)-12)/2;drawIcon('shield',x0+5,180);txt(s,x0+12,178,.5,'l')}
+  txt('SWIPE TO SWITCH VINES','c',200,.5,'l');
+}
+
+// shop: spend banked gems on longer power-ups, one-run boosts and outfits
+let shopTab=0,shopFrom='title',shopSel='explorer',shopNo=-9;
+function openShop(){shopFrom=state;state='shop';shopSel=save.fit;snd(440,660,.08)}
+function closeShop(){state=shopFrom;snd(660,440,.08)}
+function buy(cost,fn){
+  if(save.bank<cost){shopNo=T;snd(200,120,.15,'square',.05);return}
+  save.bank-=cost;fn();store();snd(660,1320,.15,'square',.05);
+}
+const priceBtn=(cost,x,y,fn)=>btn(''+cost,x,y,36,19,()=>buy(cost,fn),{kind:save.bank>=cost?'go':'off',gem:true});
+function drawShop(){
+  btn('BACK',14,6,34,15,closeShop);
+  txt('SHOP','c',8,1.5,'o');
+  gemTxt(save.bank,{r:130},10,1,T-shopNo<.4&&(T*16|0)%2?'r':'y'); // flashes red when you can't afford something
+  ['UPGRADES','BOOSTS','OUTFITS'].forEach((s,i)=>btn(s,14+i*39,28,38,14,()=>{shopTab=i;snd(520,520,.04)},{kind:i===shopTab?'alt':'off',sc:.5}));
+  const row=(y,h)=>{f(14,y,116,h,'#2c3d72');f(14.5,y+.5,115,h-1,'#151f3f')};
+  if(shopTab===0)PUP_KINDS.forEach((k,i)=>{
+    const y=47+i*40,lv=save.up[k],d=PUPS[k];row(y,37);
+    drawIcon(k,24,y+13);txt(d.short,34,y+5,1,'w');
+    for(let q=0;q<5;q++)f(34+q*7,y+16,6,3,q<lv?d.c:'#3a3643');
+    txt(pupDur(k).toFixed(1)+'S'+(lv<5?' > '+(d.t*(1+.15*(lv+1))).toFixed(1)+'S':''),34,y+24,.5,'l');
+    if(lv<5)priceBtn(UP_COST[lv],92,y+9,()=>save.up[k]++);else txt('MAX',101,y+15,1,'y');
+  });
+  else if(shopTab===1)[['shield','STARTER SHIELD',['A '+BOOSTS.shield.t+'S SHIELD AT THE','START OF A RUN']],['revive','REVIVE',['CARRY ON AFTER YOU','DIE. ONCE PER RUN']]].forEach(([k,name,desc],i)=>{
+    const y=47+i*52,n=save.boost[k];row(y,48);
+    drawIcon(k,24,y+13);txt(name,34,y+5,1,'w');
+    desc.forEach((s,q)=>txt(s,34,y+17+q*6,.5,'l'));
+    txt('IN STOCK: '+n,34,y+34,.5,n?'y':'#83769c');
+    priceBtn(BOOSTS[k].cost,92,y+22,()=>save.boost[k]++);
+  });
+  else{
+    OUTFITS.forEach((o,i)=>{
+      const x=14+(i%3)*39,y=47+(i/3|0)*62,sel=o.id===shopSel,own=save.own.includes(o.id);
+      f(x,y,38,58,sel?'y':'#2c3d72');f(x+.5,y+.5,37,57,sel?'#1d2b53':'#151f3f');
+      drawSpr(sel?RUN[(T*10|0)%4]:STAND,x+12,y+5,null,fitPal(o.id));
+      txt(o.name,x+(38-tw(o.name,.5))/2,y+29,.5,'w');
+      if(o.id===save.fit)txt('WEARING',x+(38-tw('WEARING',.5))/2,y+40,.5,'G');
+      else if(own)txt('OWNED',x+(38-tw('OWNED',.5))/2,y+40,.5,'l');
+      else gemTxt(o.cost,x+(38-tw(''+o.cost,1)-8)/2,y+38,1,save.bank>=o.cost?'y':'#83769c');
+      btns.push({x,y,w:38,h:58,fn:()=>{shopSel=o.id;snd(520,520,.04)}});
+    });
+    const o=OUTFITS.find(o=>o.id===shopSel),wear=()=>{save.fit=o.id;PAL=fitPal(o.id);store();snd(520,1040,.1)};
+    if(o.id===save.fit)btn('WEARING',30,176,84,22,null,{kind:'off'});
+    else if(save.own.includes(o.id))btn('WEAR',30,176,84,22,wear,{kind:'go'});
+    else btn('BUY '+o.cost,30,176,84,22,()=>buy(o.cost,()=>{save.own.push(o.id);save.fit=o.id;PAL=fitPal(o.id)}),{kind:save.bank>=o.cost?'go':'off',gem:true});
+    // the outfit you've picked, climbing
+    for(let yy=204;yy<246;yy++){f(71,yy,.5,1,'g');f(71.5,yy,1,1,'G');f(72.5,yy,.5,1,'g')}
+    drawSpr(CLIMB[(T*9|0)%4],66,214,null,fitPal(o.id));
   }
+}
+
+function drawHud(){
+  btns=[];
+  if(state==='title'){drawTitle();return}
   const m=height();
-  txt(''+score(),16,8,2,'w');txt(m+'M',16,22,1,'l');
-  if(combo>1&&T-comboT<3)txt('X'+combo,16+tw(''+score(),2)+4,8,1,'y');
-  const hi='HI '+best;txt(hi,128-tw(hi,1),state==='play'?20:10,1,'y');
-  if(gemCount>0){drawGem(20,34,GEM_TIERS[0],0);txt('x'+gemCount,26,31,1,'y');
+  txt(score(),16,7,1.5,'w');txt(m+'M',16,20,1,'l');
+  if(combo>1&&T-comboT<3)txt('X'+combo,16+tw(''+score(),1.5)+4,10,1,'y');
+  const hi='HI '+best;txt(hi,128-tw(hi,.5),state==='play'?21:9,.5,'y');
+  if(gemCount>0){gemTxt(gemCount,16,31,1,'y');
     // chain multiplier, blinking when it's about to run out
-    const cm=chainMult();if(cm>1&&state==='play'&&(T-lastGemT<1.2||(T*10|0)%2))txt('X'+cm,30+tw(''+gemCount,1)+3,31,1,'o')}
+    const cm=chainMult();if(cm>1&&state==='play'&&(T-lastGemT<1.2||(T*10|0)%2))txt('X'+cm,24+tw(''+gemCount,1)+4,31,1,'o')}
   for(const q of pops){const tx=Math.max(14,Math.min(130-tw(q.s,1),Math.round(q.x-tw(q.s,1)/2)));
     if(q.t<.7||(T*12|0)%2)txt(q.s,tx,sy(q.y)-q.t*20,1,'y')}
   if(state==='play'){
     const gap=p.y-lavaY,hgt=Math.max(0,Math.min(1,gap/110))*80;
     f(4,40,4,80,'n');f(5,122,2,1,'o');f(4,123,4,3,'o');f(5,124,2,2,'y');f(3,124,1,1,'r');f(8,124,1,1,'r');f(4,120-hgt,4,hgt,gap<40?((T*8|0)%2?'r':'o'):'G');
-    if(playT<2.5&&(T*3|0)%2===0)txt('SWIPE < >','c',110,1,'w');
-    // held charms, then a draining bar for each timed power-up
-    {let hx=18;if(shield){drawIcon('shield',hx,47);hx+=10}if(rope)drawIcon('rope',hx,47);
-      let hy=56;for(const k of ['magnet','x2','cool'])if(pT[k]>0){drawIcon(k,18,hy);f(24,hy-1,12,2,'k');f(24,hy-1,12*pT[k]/PUPS[k].t,2,PUPS[k].c);hy+=9}}
-    if(hintT>0&&!paused){txt('LAVA IS CLOSE!','c',226,1,'y');if((T*4|0)%2===0)txt('DO NOT GET HIT AGAIN!','c',236,1,'w')}
-    if(!paused){for(const x of [122,126]){f(x+.5,8.5,2,7,'k');f(x,8,2,7,'w')}}
-    else if(resumeT>0)txt(''+Math.ceil(resumeT/.7),'c',100,4,'w');
+    if(playT<2.5&&!paused&&(T*3|0)%2===0)txt('SWIPE < >','c',110,1,'w');
+    // one row for whatever is running: icon over a draining bar, blinking for its last 2 seconds
+    {let hx=21;for(const k of PUP_KINDS)if(pT[k]>0){
+      if(pT[k]>2||(T*8|0)%2)drawIcon(k,hx,48);
+      f(hx-5.5,55,11,2.5,'k');f(hx-5,55.5,10*Math.min(1,pT[k]/pMax[k]),1.5,PUPS[k].c);hx+=13}}
+    if(hintT>0&&!paused){txt('LAVA IS CLOSE!','c',222,1,'y');if((T*4|0)%2===0)txt('DO NOT GET HIT AGAIN!','c',233,1,'w')}
+    if(!paused){for(const x of [122,126]){f(x+.5,8.5,2,7,'k');f(x,8,2,7,'w')}btns.push({x:106,y:0,w:38,h:34,fn:pause})} // thumb-sized hit area
+    else if(resumeT>0)txt(Math.ceil(resumeT/.7),'c',96,3,'w');
     else{
       for(let y=0;y<H;y+=2)for(let x=(y>>1)&1;x<W;x+=2)f(x,y,1,1,'k');
-      txt('PAUSED','c',90,2,'o');
-      if((performance.now()/500|0)%2===0)txt('TAP TO RESUME','c',120,1,'w');
-      {const s='SOUND: '+(muted?'OFF':'ON'),x0=(W-tw(s,1))>>1;f(x0-6,145,tw(s,1)+12,13,'l');f(x0-5,146,tw(s,1)+10,11,'k');txt(s,x0,149,1,muted?'l':'G')}
+      txt('PAUSED','c',76,1.5,'o');
+      if((performance.now()/500|0)%2===0)txt('TAP TO RESUME','c',98,1,'w');
+      btn('SOUND: '+(muted?'OFF':'ON'),32,122,80,18,()=>setMute(!muted),{kind:muted?'off':'alt'});
+      btn('QUIT',32,146,80,18,quit,{kind:'off'});
     }
   }
   if(state==='dead'){
     for(let y=0;y<H;y+=2)for(let x=(y>>1)&1;x<W;x+=2)f(x,y,1,1,'k');
-    f(17,59,110,126,'l');f(18,60,108,124,'k'); // solid panel so the text reads over lava
-    txt(deathKind==='fall'?'YOU FELL!':'TOO HOT!','c',70,2,'o');
-    txt('SCORE '+score(),'c',98,1,'w');
-    txt('HEIGHT '+m+'M','c',108,1,'l');
-    txt('CLOSE CALLS '+closes,'c',118,1,'l');
-    txt('GEMS '+gemCount,'c',128,1,'y');
-    txt('BEST '+best,'c',140,1,'y');
-    if(newBest&&(T*4|0)%2)txt('NEW BEST!','c',152,1,'G');
-    if(deadT>.8&&(T*2|0)%2===0)txt('TAP TO RETRY','c',172,1,'w');
+    f(15,38,114,170,'l');f(16,39,112,168,'k'); // solid panel so the text reads over lava
+    txt(deathKind==='fall'?'YOU FELL!':'TOO HOT!','c',46,1.5,'o');
+    txt('SCORE','c',62,.5,'l');txt(score(),'c',68,2,'w');
+    txt('HEIGHT '+m+'M   CLOSE CALLS '+closes,'c',88,.5,'l');
+    gemTxt('+'+gemCount,'c',97,1,'y');txt('BANK '+save.bank,'c',107,.5,'l');
+    if(newBest){if((T*4|0)%2)txt('NEW BEST!','c',115,1,'G')}else txt('BEST '+best,'c',117,.5,'y');
+    // buttons wake up after a moment so a swipe that was already on its way can't press one
+    const ok=deadT>.8,rv=canRevive();let y=rv?128:136;
+    if(rv){btn('REVIVE',24,y,96,24,ok&&revive,{kind:'gold',sub:save.boost.revive>0?save.boost.revive+' IN STOCK':BOOSTS.revive.cost+' GEMS'});y+=27}
+    btn('RETRY',24,y,96,24,ok&&play,{kind:'go',sc:1.5});y+=27;
+    btn('SHOP',24,y,47,18,ok&&openShop,{kind:rv?'alt':'gold'});btn('HOME',73,y,47,18,ok&&(()=>{reset();state='title'}));
   }
 }
 
 function draw(){
+  if(state==='shop'){drawBg();cx.globalAlpha=.8;f(0,0,W,H,'k');cx.globalAlpha=1;btns=[];drawShop();return}
   cx.save();
   if(shake>0)cx.translate(Math.round((Math.random()-.5)*shake)*S,Math.round((Math.random()-.5)*shake)*S);
   drawBg();drawVines();drawGems();drawPups();drawTrapsBack();drawObstacles();drawPlayer();drawFlames();drawTrapsFront();drawLava();
@@ -1371,6 +1579,7 @@ addEventListener('keydown',e=>{
   unlock();
   if(e.key==='ArrowLeft'||e.key==='a')move(-1);
   else if(e.key==='ArrowRight'||e.key==='d')move(1);
+  else if(e.key==='Escape'&&state==='shop')closeShop();
   else if(e.key==='p'||e.key==='Escape'){if(paused)resume();else pause()}
   else if(e.key==='m')setMute(!muted);
   else if(e.key===' '||e.key==='Enter'){tap();e.preventDefault()}
