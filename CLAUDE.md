@@ -24,7 +24,10 @@ TODO.md tracks what's done and what's next. Design notes and fairness lessons: O
   and are grabbed by swiping across
 - Gems are banked between runs (orange 1, purple 3, red 6) and spent in the shop: power-up upgrades (5 levels,
   +15% time each), boosts (starter shield, revive once per run) and outfits (palette swaps of the explorer)
-- Screens: title (PLAY / SHOP), shop (3 tabs), death (REVIVE / RETRY / SHOP / HOME). All drawn on the canvas with btn()
+- Screens: title (TAP TO PLAY anywhere, SKINS | UPGRADES | settings cog), shop ('up': upgrades/boosts tabs, tap a row
+  for info; 'skins': outfits), death (REVIVE / RETRY / SHOP / HOME). All drawn on the canvas with btn()
+  (rounded block buttons, shine sweep on menus) and panel() (stone frame). Logo is built once by makeLogo()
+- Swipe hint and lava warning show only on the very first run
 - Pause: top-right button, 3-2-1 on resume, auto-pauses when the app is hidden; sound on/off and quit on the pause screen
 - Score = height + gems + close call bonuses (CLOSE / DODGE / CLUTCH), combos
 

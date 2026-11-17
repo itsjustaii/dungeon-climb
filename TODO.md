@@ -48,6 +48,11 @@ Add, remove or reorder anything. Check items off with [x].
 - [x] Pause button (top-right, 3-2-1 countdown on resume, P/Esc on keyboard)
 - [x] Mute button (SOUND: ON/OFF on the pause screen, M on keyboard)
 - [x] Lava meter on the left needs an icon or label (flame under the bar)
+- [x] UI overhaul: rounded block buttons (gradient face, 3D side, shine sweep on menus), stone panels, 3D headings
+- [x] Home: pulsing TAP TO PLAY (tap anywhere), SKINS | UPGRADES | settings cog row, settings panel
+- [x] Shop split into upgrades/boosts and skins; tap an upgrade row to see what it does
+- [x] Round pause button in-game
+- [x] Swipe hint and lava warning only on the very first run (felt like a tutorial every run)
 - [ ] Music
 
 ## Models (sprites)
@@ -60,6 +65,7 @@ Add, remove or reorder anything. Check items off with [x].
 - [ ] Fragile vine: still could be easier to tell apart from normal vines
 - [x] Title text and HUD font still the old chunky style (new 5x7 font, smoothed at big sizes)
 - [x] Title screen with PLAY / SHOP buttons, death screen with REVIVE / RETRY / SHOP / HOME, quit on pause
+- [x] Logo: carved, chipped and cracked letters, vines on CLIMB, rumble with falling dust, wall torches and embers
 - [ ] Cave entrance and lava pipe at the start still old style
 
 ## Android (Capacitor)
