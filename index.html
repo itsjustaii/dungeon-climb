@@ -30,7 +30,7 @@ const BAIT_START=2080;
 // power-ups start a little after that (300M). shield and rope are held until used; the rest run on a timer (seconds).
 const PUP_START=2400;
 const PUPS={shield:{c:'b',name:'SHIELD'},rope:{c:'#e0a060',name:'ROPE'},magnet:{c:'r',name:'MAGNET',t:8},x2:{c:'y',name:'DOUBLE GEMS',t:10},cool:{c:'b',name:'LAVA COOLED',t:8}};
-const PUP_ORDER=['shield','magnet','x2','rope','cool']; // introduced one at a time in this order, then dealt from a shuffled deck
+const PUP_KINDS=['shield','magnet','x2','rope','cool']; // picked at random each time
 
 // explorer: authored at 16x24, upscaled 1.5x (Scale3x then halved) to 24x36 fine px = 12x18 world, auto outline
 const SPC={o:'#291814',H:'#ab5236',h:'#742f29',d:'#5a3a22',s:'#ffccaa',z:'#e0a07a',B:'#29adff',b:'#065ab5',n:'#c9a66b',N:'#8a6a45',p:'#5f574f',P:'#3a3438',w:'#5a3a22'};
@@ -229,14 +229,16 @@ function drawSpr(px,x,y,tint){
 // sound
 let ac;
 function unlock(){try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();ac.resume()}catch(e){}}
+let muted=false;try{muted=localStorage.getItem('lavaclimb_mute')==='1'}catch(e){}
+function setMute(m){muted=m;try{localStorage.setItem('lavaclimb_mute',m?'1':'0')}catch(e){}}
 function snd(f1,f2,d,type='square',vol=.05){
-  if(!ac)return;try{const t=ac.currentTime,o=ac.createOscillator(),g=ac.createGain();
+  if(!ac||muted)return;try{const t=ac.currentTime,o=ac.createOscillator(),g=ac.createGain();
   o.type=type;o.frequency.setValueAtTime(f1,t);o.frequency.exponentialRampToValueAtTime(f2,t+d);
   g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+d);
   o.connect(g).connect(ac.destination);o.start(t);o.stop(t+d)}catch(e){}
 }
 
-let state='title',T=0,p,camY,lavaY,spikes,waves,jets,traps,deck,known,lastKind,segs,genY,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes,gems,gemCount,gemY,gemLane,surge,caught,beat,paused=false,resumeT=0,nextBaitY,baitKind,baitFails,chain,lastGemT,hintT,pups,nextPupY,pupN,pupDeck,pupKind,pupBetween,pupFails,shield,rope,pT,ropeFx;
+let state='title',T=0,p,camY,lavaY,spikes,waves,jets,traps,deck,known,lastKind,segs,genY,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes,gems,gemCount,gemY,gemLane,surge,caught,beat,paused=false,resumeT=0,nextBaitY,baitKind,baitFails,chain,lastGemT,hintT,pups,nextPupY,pupN,pupKind,pupBetween,pupFails,shield,rope,pT,ropeFx,ropeSafeY;
 function reset(){
   p={lane:1,x:-6,y:0,stun:0,inv:0,anim:0,vy:0,prevLane:1,switchT:-9};
   camY=-20;lavaY=-24;spikes=[];waves=[];jets=[];traps=[];deck=[];known=new Set();lastKind=null;segs=[];genY=90;bubbles=[];parts=[];pops=[];
@@ -244,7 +246,7 @@ function reset(){
   gems=[];gemCount=0;gemY=40;gemLane=1;
   surge=0;caught=false;beat=0;paused=false;resumeT=0;
   nextBaitY=BAIT_START;baitKind=null;baitFails=0;chain=0;lastGemT=-9;hintT=0;
-  pups=[];nextPupY=PUP_START;pupN=0;pupDeck=[];pupKind=null;pupBetween=null;pupFails=0;shield=false;rope=false;pT={magnet:0,x2:0,cool:0};ropeFx={t:0,x0:0};
+  pups=[];nextPupY=PUP_START;pupN=0;pupKind=null;pupBetween=null;pupFails=0;shield=false;rope=false;pT={magnet:0,x2:0,cool:0};ropeFx={t:0,x0:0};ropeSafeY=-1;
 }
 reset();
 
@@ -386,14 +388,10 @@ function placeBait(a,b){
 // across at the right moment, so you plan a lane change around them instead of just riding a vine.
 // both kinds only go where the vines involved are whole (no gap, no fragile) and no trap is set up.
 function rollPup(){
-  if(pupN<PUP_ORDER.length)return PUP_ORDER[pupN];
-  for(let i=0;i<12;i++){
-    if(!pupDeck.length){pupDeck=[...PUP_ORDER];for(let a=pupDeck.length-1;a>0;a--){const b=Math.random()*(a+1)|0;[pupDeck[a],pupDeck[b]]=[pupDeck[b],pupDeck[a]]}}
-    const k=pupDeck.pop();
-    if((k==='shield'&&shield)||(k==='rope'&&rope))continue; // never offer a charm you're already holding
-    return k;
-  }
-  return 'magnet';
+  // Subway Surfers style: any kind, any time. different ones stack; picking up one that's already running
+  // just refills its timer. the only ones held back are a shield or rope you're already carrying.
+  const ok=PUP_KINDS.filter(k=>!(k==='shield'&&shield)&&!(k==='rope'&&rope));
+  return ok[Math.random()*ok.length|0];
 }
 function placePup(a,b){
   pupKind=pupKind||rollPup();
@@ -422,12 +420,18 @@ function getPup(u){
   for(let i=0;i<12;i++)parts.push({x:u.x+Math.random()*8-4,y:u.y+Math.random()*8-4,vx:(Math.random()-.5)*50,vy:Math.random()*50-10,l:.5,c:d.c});
   snd(520,1560,.25,'square',.05);
 }
-// rope: instead of falling, swing to whichever vine has the longest clear run ahead
+// rope: instead of falling, you're hauled to the nearest stretch of whole vine (any lane) that's long enough to
+// react on. you can't fall until your hands reach it (ropeSafeY), so a save is never wasted on a vine that breaks next.
 function useRope(){
-  const run=l=>{let d=1e9;for(const s of segs)if(s.lane===l&&isGap(s)&&s.y1>p.y-4)d=Math.min(d,s.y0-hands());return d};
-  let best=p.lane,bd=-1e9;
-  for(const l of [p.lane-1,p.lane+1,p.lane-2,p.lane+2])if(l>=0&&l<=2&&run(l)>bd+(Math.abs(l-p.lane)>1?20:0)){bd=run(l);best=l}
-  rope=false;ropeFx={t:.35,x0:p.x};
+  const need=20+speed*.35,h=hands();
+  let best=p.lane,by=h+200,bc=1e9;
+  for(let l=0;l<3;l++)for(let y=h;y<h+200;y+=4){
+    if(segs.some(s=>s.lane===l&&isGap(s)&&s.y0<y+need&&s.y1>y))continue;
+    const c=y-h+Math.abs(l-p.lane)*8+(segs.some(s=>s.lane===l&&s.type==='F'&&!s.broken&&s.y0<y+need&&s.y1>y)?30:0);
+    if(c<bc){bc=c;best=l;by=y}
+    break;
+  }
+  rope=false;ropeSafeY=by+2;ropeFx={t:.35,x0:p.x};
   p.prevLane=p.lane;p.switchT=T;p.lane=best;p.inv=Math.max(p.inv,1);shake=3;
   pops.push({s:'ROPE SAVE!',x:p.x,y:p.y+30,t:0});snd(300,900,.2,'square',.06);
 }
@@ -461,18 +465,19 @@ function move(d){
     if(isGap(s)&&dist>=0&&dist<10){close('DODGE');break}
     if(s.type==='F'&&!s.broken&&s.t>FRAG*.65&&onSeg(s)){close('CLUTCH');break}
   }
-  p.prevLane=p.lane;p.switchT=T;p.lane=n;snd(520,880,.06);
+  p.prevLane=p.lane;p.switchT=T;p.lane=n;ropeSafeY=-1;snd(520,880,.06);
   // swiping across grabs a power-up floating between those two vines, if it's level with you
   const xa=Math.min(LX[p.prevLane],LX[n]),xb=Math.max(LX[p.prevLane],LX[n]);
   for(const u of pups)if(u.between&&!u.got&&u.x>xa&&u.x<xb&&u.y>p.y-10&&u.y<p.y+32)getPup(u);
 }
 function tap(px,py){
   if(state==='play'){
-    if(paused)resume();
-    else if(px!==undefined){ // pause button: top-right corner, with a thumb-sized hit area
-      const r=cv.getBoundingClientRect(),x=(px-r.left)/r.width*W,y=(py-r.top)/r.height*H;
-      if(x>106&&y<34)pause();
+    const r=cv.getBoundingClientRect(),x=px===undefined?-1:(px-r.left)/r.width*W,y=px===undefined?-1:(py-r.top)/r.height*H;
+    if(paused){
+      if(resumeT<=0&&y>140&&y<166)setMute(!muted); // the SOUND line on the pause screen
+      else resume();
     }
+    else if(x>106&&y>=0&&y<34)pause(); // pause button: top-right corner, with a thumb-sized hit area
     return;
   }
   if(state==='title'){state='intro';snd(330,660,.15)}
@@ -979,7 +984,8 @@ function update(dt){
     }
     while(nextPupY<p.y+200){
       const ok=placePup(Math.max(nextPupY,p.y+192),p.y+285);
-      nextPupY+=ok?(14+Math.random()*6)*spAt(nextPupY):80;
+      // random gaps (4 to 13s): short ones overlap with whatever is still running, long ones leave you with nothing
+      nextPupY+=ok?(4+Math.random()*9)*spAt(nextPupY):80;
       if(ok)pupFails=0;else if(++pupFails>=4){pupFails=0;pupBetween=!pupBetween} // no room for that kind of spot here: try the other
     }
     for(const k in pT)if(pT[k]>0)pT[k]-=dt;
@@ -1064,7 +1070,7 @@ function update(dt){
     }
     gems=gems.filter(g=>!g.got&&g.y>camY-20);
 
-    for(const s of segs)if(isGap(s)&&s.lane===p.lane&&Math.abs(p.x-LX[s.lane])<5&&grip()>=s.y0&&hands()<s.y1){if(rope)useRope();else die('fall');break}
+    if(hands()>=ropeSafeY)for(const s of segs)if(isGap(s)&&s.lane===p.lane&&Math.abs(p.x-LX[s.lane])<5&&grip()>=s.y0&&hands()<s.y1){if(rope)useRope();else die('fall');break}
     if(state==='play'&&lavaY>=p.y+2)die('burn');
   } else if(state==='dead'){
     deadT+=dt;lavaY+=10*dt;
@@ -1270,6 +1276,7 @@ function drawPlayer(){
   if(state==='play'){
     if(shield)for(let a=0;a<16;a++){const an=a/16*6.283+T*2;f(p.x+Math.cos(an)*9-.5,y+9+Math.sin(an)*11-.5,1,1,a%2?'b':'w')}
     if(ropeFx.t>0)f(Math.min(ropeFx.x0,p.x),y+4,Math.abs(ropeFx.x0-p.x),1,'#e0a060');
+    if(hands()<ropeSafeY)f(p.x-.5,sy(ropeSafeY),1,Math.max(0,y+2-sy(ropeSafeY)),'#e0a060'); // hauled up the rope
     // what you're carrying shows on the explorer himself: rope coil on the hip, timed power-ups as icons over
     // his head (blinking when nearly out) plus a small effect each: gems-in dots, gold sparkles, frost
     if(rope){const c='#e0a060';f(p.x+5,y+10,3,1,c);f(p.x+5,y+13,3,1,c);f(p.x+4,y+11,1,2,c);f(p.x+8,y+11,1,2,c)}
@@ -1300,7 +1307,7 @@ function drawHud(){
     if(q.t<.7||(T*12|0)%2)txt(q.s,tx,sy(q.y)-q.t*20,1,'y')}
   if(state==='play'){
     const gap=p.y-lavaY,hgt=Math.max(0,Math.min(1,gap/110))*80;
-    f(4,40,4,80,'n');f(4,120-hgt,4,hgt,gap<40?((T*8|0)%2?'r':'o'):'G');
+    f(4,40,4,80,'n');f(5,122,2,1,'o');f(4,123,4,3,'o');f(5,124,2,2,'y');f(3,124,1,1,'r');f(8,124,1,1,'r');f(4,120-hgt,4,hgt,gap<40?((T*8|0)%2?'r':'o'):'G');
     if(playT<2.5&&(T*3|0)%2===0)txt('SWIPE < >','c',110,1,'w');
     // held charms, then a draining bar for each timed power-up
     {let hx=18;if(shield){drawIcon('shield',hx,47);hx+=10}if(rope)drawIcon('rope',hx,47);
@@ -1312,10 +1319,12 @@ function drawHud(){
       for(let y=0;y<H;y+=2)for(let x=(y>>1)&1;x<W;x+=2)f(x,y,1,1,'k');
       txt('PAUSED','c',90,2,'o');
       if((performance.now()/500|0)%2===0)txt('TAP TO RESUME','c',120,1,'w');
+      {const s='SOUND: '+(muted?'OFF':'ON'),x0=(W-tw(s,1))>>1;f(x0-6,145,tw(s,1)+12,13,'l');f(x0-5,146,tw(s,1)+10,11,'k');txt(s,x0,149,1,muted?'l':'G')}
     }
   }
   if(state==='dead'){
     for(let y=0;y<H;y+=2)for(let x=(y>>1)&1;x<W;x+=2)f(x,y,1,1,'k');
+    f(17,59,110,126,'l');f(18,60,108,124,'k'); // solid panel so the text reads over lava
     txt(deathKind==='fall'?'YOU FELL!':'TOO HOT!','c',70,2,'o');
     txt('SCORE '+score(),'c',98,1,'w');
     txt('HEIGHT '+m+'M','c',108,1,'l');
@@ -1347,6 +1356,9 @@ requestAnimationFrame(loop);
 function fit(){const s=Math.min(innerWidth/W,innerHeight/H);cv.style.width=W*s+'px';cv.style.height=H*s+'px'}
 addEventListener('resize',fit);fit();
 
+// fairness checks: open the game with ?bot in the address, then run botCheck() in the console (see tools/botcheck.js)
+if(/[?&]bot\b/.test(location.search)){const s=document.createElement('script');s.src='tools/botcheck.js';document.body.appendChild(s)}
+
 // input: swipe, tap, keys
 let down=false,sx0=0,sy0=0,swiped=false;
 const stage=document.getElementById('stage');
@@ -1360,6 +1372,7 @@ addEventListener('keydown',e=>{
   if(e.key==='ArrowLeft'||e.key==='a')move(-1);
   else if(e.key==='ArrowRight'||e.key==='d')move(1);
   else if(e.key==='p'||e.key==='Escape'){if(paused)resume();else pause()}
+  else if(e.key==='m')setMute(!muted);
   else if(e.key===' '||e.key==='Enter'){tap();e.preventDefault()}
 });
 </script>

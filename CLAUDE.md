@@ -1,7 +1,7 @@
 # Dungeon Climb
 
 Retro pixel endless climber (PICO-8 style palette). Game logic runs in a 144x256 world, drawn at 2x (288x512 canvas).
-Single file: index.html, vanilla JS + Canvas, no dependencies.
+Single file: index.html, vanilla JS + Canvas, no dependencies. tools/botcheck.js is the fairness bot (loaded only with ?bot).
 Live: https://itsjustaii.github.io/dungeon-climb
 TODO.md tracks what's done and what's next. Design notes and fairness lessons: Obsidian vault, `Dungeon Climb/Design Learnings.md`.
 
@@ -16,10 +16,11 @@ TODO.md tracks what's done and what's next. Design notes and fairness lessons: O
   before a break; more bait and more red the higher you climb; close calls also spawn a small bonus burst
 - Gem chain: x2/x3/x4 gem points at 15/40/100 gems in a row; a hit or 2s without a gem breaks it
 - Lava surge: a hit brings the lava to your heels for ~4s; a second hit in that time burns you
-- Bait gems start at 260M, power-ups at 300M (then one roughly every 17s, from a shuffled deck)
+- Bait gems start at 260M, power-ups at 300M
 - Power-ups: shield (absorbs a hit) and rope (saves a fall) are held until used; magnet 8s, double gems 10s,
   lava cooled 8s run on timers. Half sit on a vine, half float between two vines and are grabbed by swiping across
-- Pause: top-right button, 3-2-1 on resume, auto-pauses when the app is hidden
+- Power-ups spawn Subway Surfers style: random kind, random gaps (4-13s), different ones stack, same one refills its timer
+- Pause: top-right button, 3-2-1 on resume, auto-pauses when the app is hidden; sound on/off on the pause screen
 - Score = height + gems + close call bonuses (CLOSE / DODGE / CLUTCH), combos
 
 ## Fairness rules (don't break these)
@@ -28,7 +29,8 @@ TODO.md tracks what's done and what's next. Design notes and fairness lessons: O
 - Never aim at the lane the player just escaped to; never put fragile pieces on the only way through
 - Bait gems are always optional: the vine under them is whole and a neighbouring vine stays open past the break
 - Power-ups only go where the vines involved are whole and no trap is set up; between-vine ones need a safe landing
-- After changing generation or traps, run the in-browser bot checks (no-escape moments, fake warnings, trap droughts)
+- After changing generation, traps, bait or power-ups, run the bot: open `index.html?bot` (served, e.g. `python3 -m http.server`),
+  then `botCheck()` and `botCheck(100,150,true)` in the console. It must print PASS (see tools/botcheck.js for what it checks)
 
 ## Plan
 - Next: friends playtest and tuning of the new stuff; then a vehicle moment, height zones, shop/missions

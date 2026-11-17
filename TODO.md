@@ -41,10 +41,10 @@ Add, remove or reorder anything. Check items off with [x].
 - [ ] Playtest difficulty curve on a real phone (gaps/jets/spikes frequency)
 
 ## Feel / UX
-- [ ] Death screen hard to read over lava (add a solid box behind the text)
+- [x] Death screen hard to read over lava (solid panel behind the text)
 - [x] Pause button (top-right, 3-2-1 countdown on resume, P/Esc on keyboard)
-- [ ] Mute button
-- [ ] Lava meter on the left needs an icon or label
+- [x] Mute button (SOUND: ON/OFF on the pause screen, M on keyboard)
+- [x] Lava meter on the left needs an icon or label (flame under the bar)
 - [ ] Music
 
 ## Models (sprites)
