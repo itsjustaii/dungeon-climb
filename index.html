@@ -314,7 +314,7 @@ function snd(f1,f2,d,type='square',vol=.05){
   o.connect(g).connect(ac.destination);o.start(t);o.stop(t+d)}catch(e){}
 }
 
-let state='title',T=0,p,camY,lavaY,spikes,waves,jets,traps,deck,known,lastKind,segs,genY,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes,gems,gemCount,gemY,gemLane,surge,caught,beat,paused=false,resumeT=0,nextBaitY,baitKind,baitFails,chain,lastGemT,hintT,pups,nextPupY,pupN,pupKind,pupBetween,pupFails,pupBag,pT,pMax,ropeFx,ropeSafeY,banked,revived;
+let offer=null,reviveArmed=false,bubFx=[],state='title',T=0,p,camY,lavaY,spikes,waves,jets,traps,deck,known,lastKind,segs,genY,nextY,it,playT,deadT,speed,shake,newBest,deathKind,bubbles,parts,pops,bonus,combo,comboT,closes,gems,gemCount,gemY,gemLane,surge,caught,beat,paused=false,resumeT=0,nextBaitY,baitKind,baitFails,chain,lastGemT,hintT,pups,nextPupY,pupN,pupKind,pupBetween,pupFails,pupBag,pT,pMax,ropeFx,ropeSafeY,banked,revived;
 function reset(){
   p={lane:1,x:-6,y:0,stun:0,inv:0,anim:0,vy:0,prevLane:1,switchT:-9};
   camY=-20;lavaY=-24;spikes=[];waves=[];jets=[];traps=[];deck=[];known=new Set();lastKind=null;segs=[];genY=90;bubbles=[];parts=[];pops=[];
@@ -323,7 +323,7 @@ function reset(){
   surge=0;caught=false;beat=0;paused=false;resumeT=0;
   nextBaitY=BAIT_START;baitKind=null;baitFails=0;chain=0;lastGemT=-9;hintT=0;
   pups=[];nextPupY=PUP_START;pupN=0;pupKind=null;pupBetween=null;pupFails=0;pupBag=[];ropeFx={t:0,x0:0};ropeSafeY=-1;
-  pT={shield:0,rope:0,magnet:0,x2:0,cool:0};pMax={...pT};banked=0;revived=false;
+  pT={shield:0,rope:0,magnet:0,x2:0,cool:0};pMax={...pT};banked=0;revived=false;offer=null;reviveArmed=false;bubFx=[];
 }
 reset();
 
@@ -541,7 +541,7 @@ function gemBurst(lane,y0){
 function close(label){
   combo=T-comboT<3?combo+1:1;comboT=T;closes++;
   const pts=10*combo;bonus+=pts;
-  pops.push({s:label+' +'+pts,x:p.x,y:p.y+22,t:0});
+  pops.push({s:label+' +'+pts,x:p.x,y:p.y+22,t:0,sc:.5});
   snd(660,1320,.1,'square',.04);
   gemBurst(p.lane,p.y+20);
 }
@@ -574,7 +574,7 @@ function tap(px,py){
   else if(state==='title'){if(settingsOpen){settingsOpen=false;snd(660,440,.08)}else play()} // home: tap anywhere to play
 }
 function die(kind){
-  deadY=p.y;state='dead';deathKind=kind;deadT=0;p.vy=kind==='fall'?55:0;shake=6; // a fall starts with a small hop off the vine end
+  deadY=p.y;state='dead';deathKind=kind;offer=null; // unpopped bubbles are gone (their boosts stay in stock)deadT=0;p.vy=kind==='fall'?55:0;shake=6; // a fall starts with a small hop off the vine end
   endRun();
   snd(440,40,.8,'sawtooth',.07);
 }
@@ -584,15 +584,25 @@ function endRun(){
   save.bank+=gemCount-banked;banked=gemCount;store();
 }
 // revive (once per run): back on the nearest whole vine, lava pushed away, a 3-2-1 and a moment of no-hit time.
-// uses one from stock, or buys one on the spot
-const canRevive=()=>!revived&&(save.boost.revive>0||save.bank>=BOOSTS.revive.cost);
-function revive(){
-  if(state!=='dead'||!canRevive())return;
-  if(save.boost.revive>0)save.boost.revive--;else save.bank-=BOOSTS.revive.cost;
+// free: a revive popped from the start-of-run bubble (already taken from stock); otherwise it's bought on the spot with gems
+const canRevive=()=>!revived&&!reviveArmed&&save.bank>=BOOSTS.revive.cost;
+function revive(free){
+  if(state!=='dead'||revived||!free&&!canRevive())return;
+  if(!free)save.bank-=BOOSTS.revive.cost;
   store();revived=true;state='play';
   p.y=deadY;p.vy=0;p.stun=0;caught=false;surge=0;haul();p.inv=2.5;shake=0;
   lavaY=Math.min(lavaY,p.y-FAR);
   paused=true;resumeT=RESUME;snd(330,990,.3,'square',.05);
+}
+// start-of-run boost bubbles
+const OFFER_T=5,BUB_Y=223; // below the explorer, so they never cover him or what's coming
+const bubX=k=>offer.all.length<2?72:k==='shield'?54:90; // spots stay put when the other bubble is popped
+function popBoost(k){
+  if(!offer||!offer.ks.includes(k)||save.boost[k]<=0)return;
+  bubFx.push({x:bubX(k),t:0,k});
+  save.boost[k]--;store();offer.ks=offer.ks.filter(q=>q!==k);if(!offer.ks.length)offer=null;
+  if(k==='shield')give('shield',BOOSTS.shield.t);else{reviveArmed=true;pops.push({s:'REVIVE READY',x:p.x,y:p.y+30,t:0})}
+  snd(800,1600,.08,'square',.05);
 }
 function play(){reset();state='intro';firstRun=!save.runs&&!best;save.runs=(save.runs||0)+1;store();snd(330,660,.15)}
 function quit(){endRun();reset();state='title'}
@@ -1064,9 +1074,11 @@ function update(dt){
     if(it>=1.6)lavaY+=14*dt;
     if(it>=2){const k=Math.min(1,(it-2)/.4);p.y=22*k+Math.sin(k*Math.PI)*10;
       if(k>=1){state='play';playT=0;p.y=22;
-        if(save.boost.shield>0){save.boost.shield--;store();give('shield',BOOSTS.shield.t)}}} // starter shield from the shop
+        // boosts from the shop float up in bubbles for 5s; pop one to use it this run, or leave it in stock
+        const ks=['shield','revive'].filter(k=>save.boost[k]>0);if(ks.length)offer={t:OFFER_T,ks,all:[...ks]}}}
   } else if(state==='play'){
     playT+=dt;
+    if(offer&&(offer.t-=dt)<=0)offer=null;
     speed=spAt(p.y);
     if(p.stun>0)p.stun-=dt;else{p.y+=speed*dt;p.anim+=dt*(8+speed*.08)}
     p.inv-=dt;
@@ -1171,7 +1183,7 @@ function update(dt){
         const m=chainMult(),pts=g.tier.pts*m*(pT.x2>0?2:1);
         g.got=true;bonus+=pts;gemCount+=g.tier.pts/2; // bank value: orange 1, purple 3, red 6
         if(m>m0){pops.push({s:'CHAIN X'+m,x:p.x,y:p.y+30,t:0});snd(700,1400,.15,'square',.05)}
-        else if(g.bait)pops.push({s:'+'+pts,x:LX[g.lane],y:g.y+10,t:0});
+        else if(g.bait)pops.push({s:'+'+pts,x:LX[g.lane],y:g.y+10,t:0,sc:.5});
         for(let i=0;i<5;i++)parts.push({x:LX[g.lane]+Math.random()*4-2,y:g.y,vy:20+Math.random()*30,vx:(Math.random()-.5)*20,l:.35,c:g.tier.base});
         snd(900+Math.min(chain,50)*10,1500+Math.min(chain,50)*10,.08,'square',.03);
       }
@@ -1182,6 +1194,7 @@ function update(dt){
     if(state==='play'&&lavaY>=p.y+2)die('burn');
   } else if(state==='dead'){
     deadT+=dt;lavaY+=10*dt;
+    if(reviveArmed&&!revived&&deadT>.7){reviveArmed=false;revive(true)} // a revive popped at the start brings you straight back
     if(deathKind==='fall'){p.vy-=300*dt;p.y+=p.vy*dt}else p.y-=10*dt;
   }
   if(state!=='dead'){const tg=Math.max(-20,p.y-70);camY+=(tg-camY)*Math.min(1,dt*8)}
@@ -1646,7 +1659,10 @@ function drawTitle(){
   if(!tapPlay){tapPlay=document.createElement('canvas');tapPlay.width=W*S;tapPlay.height=24*S;heading('TAP TO PLAY',4,2,'y','w','#8a4f00',0,tapPlay.getContext('2d'))}
   if(!settingsOpen){const s=.97+.05*Math.sin(T*4),cy=134;cx.imageSmoothingEnabled=false;
     cx.drawImage(tapPlay,(W*S*(1-s))/2,cy*S-12*S*s,W*S*s,24*S*s)}
-  if(save.boost.shield>0){const s='x'+save.boost.shield+' READY',x0=(W-tw(s,.5)-12)/2;drawIcon('shield',x0+5,172);txt(s,x0+12,170,.5,'l')}
+  { // boosts waiting in stock (offered in bubbles when a run starts)
+    const ks=['shield','revive'].filter(k=>save.boost[k]>0),parts_=ks.map(k=>'X'+save.boost[k]),w=parts_.reduce((t,s)=>t+12+tw(s,.5)+6,-6);let x0=(W-w)/2;
+    ks.forEach((k,i)=>{drawIcon(k,x0+5,172);txt(parts_[i],x0+12,170,.5,'l');x0+=12+tw(parts_[i],.5)+6});
+  }
   // bottom row: skins, upgrades (biggest), settings cog
   // mirrored around the middle: two equal side buttons, upgrades bigger in the centre
   btn('SKINS',8,198,34,26,()=>openShop('skins'),{kind:'pink'});
@@ -1698,7 +1714,7 @@ function drawShop(){
     f(122,y+2,6,6,'k');f(122.5,y+2.5,5,5,'#4a3f63');txt('?',123.5,y+3,.5,'y',false);
     btns.push({x:14,y,w:116,h:37,fn:()=>{shopInfo=k;snd(520,700,.06)}});
   });
-  else if(page===1)[['shield','STARTER SHIELD',['A '+BOOSTS.shield.t+'S SHIELD AT THE','START OF A RUN']],['revive','REVIVE',['CARRY ON AFTER YOU','DIE. ONCE PER RUN']]].forEach(([k,name,desc],i)=>{
+  else if(page===1)[['shield','STARTER SHIELD',[BOOSTS.shield.t+'S SHIELD. POP ITS','BUBBLE AT THE START']],['revive','REVIVE',['POP AT THE START TO','COME BACK ONCE']]].forEach(([k,name,desc],i)=>{
     const y=47+i*52,n=save.boost[k];row(y,48);
     drawIcon(k,24,y+13);txt(name,34,y+5,1,'w');
     desc.forEach((s,q)=>txt(s,34,y+17+q*6,.5,'l'));
@@ -1745,6 +1761,29 @@ const PUP_INFO={
   cool:['GET HIT AND THE','LAVA STAYS DOWN','INSTEAD OF','SURGING UP.']};
 let shopInfo=null;
 
+// boost bubbles: see-through soap bubbles with the boost inside, bobbing, with a ring that drains over 5s; tap to pop
+function drawBubbles(){
+  const dt=1/60;
+  if(offer){
+    const left=offer.t/OFFER_T,blink=offer.t<1.5&&(T*8|0)%2;
+    if((T*2|0)%2===0||offer.t<OFFER_T-2)txt('TAP TO USE','c',BUB_Y+13,.5,'w');
+    for(const k of offer.ks){
+      const x=bubX(k),y=BUB_Y+Math.sin(T*3+(k==='shield'?0:2))*1.5,r=11;
+      if(blink)continue;
+      cx.globalAlpha=.28;shape(x-r,y-r,r*2,r*2,'#9fd8ff',true);cx.globalAlpha=1;
+      // rim, then the drain ring (bright part = time left), going round from the top
+      for(let a=0;a<64;a++){const t=a/64,an=t*Math.PI*2-Math.PI/2,px=x+Math.cos(an)*r,py=y+Math.sin(an)*r;
+        f(px-.5,py-.5,1,1,t<=left?'#ffffff':'#4a6a8a')}
+      f(x-6,y-7,2,1,'w');f(x-7,y-6,1,2,'w');                 // shine
+      drawIcon(k,x,y-1);
+      txt('X'+save.boost[k],x-tw('X'+save.boost[k],.5)/2,y+4.5,.5,'w');
+      btns.push({x:x-r-2,y:y-r-2,w:r*2+4,h:r*2+4,fn:()=>popBoost(k)});
+    }
+  }
+  // pop: a ring of droplets flying out
+  bubFx=bubFx.filter(q=>(q.t+=dt)<.35);
+  for(const q of bubFx)for(let i=0;i<10;i++){const an=i/10*Math.PI*2,d=11+q.t*40;f(q.x+Math.cos(an)*d-.5,BUB_Y+Math.sin(an)*d-.5,1,1,i%2?'w':'#9fd8ff')}
+}
 function drawHud(){
   btns=[];
   if(state==='title'){drawTitle();return}
@@ -1755,8 +1794,8 @@ function drawHud(){
   if(gemCount>0){gemTxt(gemCount,16,31,1,'y');
     // chain multiplier, blinking when it's about to run out
     const cm=chainMult();if(cm>1&&state==='play'&&(T-lastGemT<1.2||(T*10|0)%2))txt('X'+cm,24+tw(''+gemCount,1)+4,31,1,'o')}
-  for(const q of pops){const tx=Math.max(14,Math.min(130-tw(q.s,1),Math.round(q.x-tw(q.s,1)/2)));
-    if(q.t<.7||(T*12|0)%2)txt(q.s,tx,sy(q.y)-q.t*20,1,'y')}
+  for(const q of pops){const sc=q.sc||1,tx=Math.max(14,Math.min(130-tw(q.s,sc),Math.round(q.x-tw(q.s,sc)/2))); // close calls use small text
+    if(q.t<.7||(T*12|0)%2)txt(q.s,tx,sy(q.y)-q.t*20,sc,'y')}
   if(state==='play'){
     const gap=p.y-lavaY,hgt=Math.max(0,Math.min(1,gap/110))*80;
     f(4,40,4,80,'n');f(5,122,2,1,'o');f(4,123,4,3,'o');f(5,124,2,2,'y');f(3,124,1,1,'r');f(8,124,1,1,'r');f(4,120-hgt,4,hgt,gap<40?((T*8|0)%2?'r':'o'):'G');
@@ -1765,9 +1804,10 @@ function drawHud(){
     {let hx=21;for(const k of PUP_KINDS)if(pT[k]>0){
       if(pT[k]>2||(T*8|0)%2)drawIcon(k,hx,48);
       f(hx-5.5,55,11,2.5,'k');f(hx-5,55.5,10*Math.min(1,pT[k]/pMax[k]),1.5,PUPS[k].c);hx+=13}}
+    if(!paused)drawBubbles();
     if(hintT>0&&!paused){txt('LAVA IS CLOSE!','c',222,1,'y');if((T*4|0)%2===0)txt('DO NOT GET HIT AGAIN!','c',233,1,'w')}
     if(!paused){btns.push({x:106,y:0,w:38,h:34,fn:pause}); // thumb-sized hit area
-      btn('',119,4,19,19,pause,{kind:'pink',round:true,still:true,icon:icoPause})}
+      btn('',122,5,16,16,pause,{kind:'pink',still:true,icon:icoPause})}
     else if(resumeT>0)heading(Math.ceil(resumeT/.7),96,3,'y','w','#8a4f00');
     else{
       dim();panel(20,60,104,108);
@@ -1777,7 +1817,8 @@ function drawHud(){
       btn('QUIT',32,135,80,22,quit,{kind:'red'});
     }
   }
-  if(state==='dead'){
+  if(state==='dead'&&reviveArmed&&!revived){if((T*6|0)%2)txt('REVIVING...','c',110,1.5,'y')} // the popped revive kicks in
+  else if(state==='dead'){
     dim();panel(10,28,124,194);
     const fell=deathKind==='fall';
     heading(fell?'YOU FELL!':'TOO HOT!',38,2,fell?'#5a8cff':'o',fell?'b':'y',fell?'#1d2b53':'#8a2a00');
@@ -1787,7 +1828,7 @@ function drawHud(){
     if(newBest){if((T*4|0)%2)txt('NEW BEST!','c',120,1,'G')}else txt('BEST '+best,'c',121,.5,'y');
     // buttons wake up after a moment so a swipe that was already on its way can't press one
     const ok=deadT>.8,rv=canRevive();let y=rv?131:140;
-    if(rv){btn('REVIVE',24,y,96,26,ok&&revive,{kind:'gold',sub:save.boost.revive>0?save.boost.revive+' IN STOCK':BOOSTS.revive.cost+' GEMS'});y+=29}
+    if(rv){btn('REVIVE',24,y,96,26,ok&&(()=>revive()),{kind:'gold',sub:BOOSTS.revive.cost+' GEMS'});y+=29}
     btn('RETRY',24,y,96,26,ok&&play,{kind:'go',sc:1.5});if(ok){arrow(19,y+9,1);arrow(125,y+9,-1)}y+=29;
     btn('SHOP',24,y,47,20,ok&&(()=>openShop('up')),{kind:rv?'alt':'gold'});btn('HOME',73,y,47,20,ok&&(()=>{reset();state='title'}),{kind:'pink'});
   }
