@@ -37,6 +37,8 @@ Add, remove or reorder anything. Check items off with [x].
 - [x] Power-up rework: shield and rope on timers too, no duplicates of one that's running, much rarer (14-24s apart),
       placed off the gem trail, new sprites for all five, one HUD row with drain bars
 - [x] Gem bank + shop v1: power-up upgrades, boosts (starter shield, revive), outfits
+- [x] Magnet pulls gems like a vacuum (they used to snap back when you swiped)
+- [x] Power-ups every 9-16s (14-24s felt lonely)
 - [ ] Playtest the new difficulty with friends: lava surge window, bait from 260M, power-up frequency, shop prices
 - [ ] A "vehicle" moment (mine cart / bat ride)
 - [ ] Height zones with new scenery (dungeon -> crystal mine -> lava forge -> frozen depths)
@@ -53,6 +55,10 @@ Add, remove or reorder anything. Check items off with [x].
 - [x] Shop split into upgrades/boosts and skins; tap an upgrade row to see what it does
 - [x] Round pause button in-game
 - [x] Swipe hint and lava warning only on the very first run (felt like a tutorial every run)
+- [x] Boost bubbles at run start (pop shield / pop revive for an auto-revive), unpopped stay in stock
+- [x] Deaths play out before the panel (fall into the lava with a splash, burn sinks in smoke); panel drops in
+- [x] Death screen: HOME | RETRY | REVIVE; square pause and back buttons; smaller close-call text
+- [x] Friendlier logo (chunky rounded letters on a wave), smaller TAP TO PLAY, longer intro before the jump
 - [ ] Music
 
 ## Models (sprites)

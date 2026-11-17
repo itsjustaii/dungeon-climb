@@ -17,16 +17,20 @@ TODO.md tracks what's done and what's next. Design notes and fairness lessons: O
 - Gem chain: x2/x3/x4 gem points at 15/40/100 gems in a row; a hit or 2s without a gem breaks it
 - Lava surge: a hit brings the lava to your heels for ~4s; a second hit in that time burns you
 - Bait gems start at 260M, power-ups at 300M
-- Power-ups all run on timers: shield 12s (absorbs one hit), rope 12s (saves one fall), magnet 8s, double gems 10s,
+- Power-ups all run on timers: shield 12s (absorbs one hit), rope 12s (saves one fall), magnet 8s (caught gems fly to you like a vacuum), double gems 10s,
   lava cooled 8s. Shield and rope trigger on their own, the timer makes them a window to take risks in
 - Power-ups come one every 9-16s of climbing (14-24s felt too lonely) and come from a shuffled bag, never one that's still running.
   About 2 in 3 sit on a vine one lane off the gem trail, the rest float between the trail's vine and a neighbour
   and are grabbed by swiping across
 - Gems are banked between runs (orange 1, purple 3, red 6) and spent in the shop: power-up upgrades (5 levels,
-  +15% time each), boosts (starter shield, revive once per run) and outfits (palette swaps of the explorer)
+  +15% time each), boosts (starter shield, revive) and outfits (palette swaps of the explorer)
 - Screens: title (TAP TO PLAY anywhere, SKINS | UPGRADES | settings cog), shop ('up': upgrades/boosts tabs, tap a row
-  for info; 'skins': outfits), death (REVIVE / RETRY / SHOP / HOME). All drawn on the canvas with btn()
+  for info; 'skins': outfits), death (small HOME | big RETRY | small REVIVE for gems). All drawn on the canvas with btn()
   (rounded block buttons, shine sweep on menus) and panel() (stone frame). Logo is built once by makeLogo()
+- Boosts in stock float up in bubbles for 5s when a run starts: pop shield to use it, pop revive to come back
+  automatically on your first death. Unpopped ones stay in stock
+- Intro stands ~1.2s before the jump (3.6s total). Deaths play out first (camera follows a fall into the lava,
+  a burn sinks in smoke), then the panel drops in
 - Swipe hint and lava warning show only on the very first run
 - Pause: top-right button, 3-2-1 on resume, auto-pauses when the app is hidden; sound on/off and quit on the pause screen
 - Score = height + gems + close call bonuses (CLOSE / DODGE / CLUTCH), combos
