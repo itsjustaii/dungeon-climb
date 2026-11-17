@@ -563,7 +563,7 @@ function move(d){
 }
 function tap(px,py){
   if(px===undefined){ // space / enter: the main action on each screen
-    if(state==='title'&&!settingsOpen||state==='dead'&&deadT>.8)play();else if(state==='play'&&paused)resume();
+    if(state==='title'&&!settingsOpen)play();else if(state==='dead'&&deadOk()){reset();state='title'}else if(state==='play'&&paused)resume();
     return;
   }
   const r=cv.getBoundingClientRect(),x=(px-r.left)/r.width*W,y=(py-r.top)/r.height*H;
@@ -573,8 +573,14 @@ function tap(px,py){
   else if(state==='shop'&&shopInfo)shopInfo=null; // tap outside the info panel closes it
   else if(state==='title'){if(settingsOpen){settingsOpen=false;snd(660,440,.08)}else play()} // home: tap anywhere to play
 }
+// when the death panel pops up: a second after the splash, or once the burn has sunk in
+let splashT=-1;
+const panelAt=()=>deathKind==='fall'?(splashT<0?99:splashT+1.1):1.8;
+const deadOk=()=>deadT>panelAt()+.45; // buttons wake up after the panel lands, so a late swipe can't press one
 function die(kind){
-  deadY=p.y;state='dead';deathKind=kind;offer=null; // unpopped bubbles are gone (their boosts stay in stock)deadT=0;p.vy=kind==='fall'?55:0;shake=6; // a fall starts with a small hop off the vine end
+  deadY=p.y;state='dead';deathKind=kind;deadT=0;splashT=-1;shake=6;
+  p.vy=kind==='fall'?55:0; // a fall starts with a small hop off the vine end
+  offer=null; // unpopped bubbles are gone (their boosts stay in stock)
   endRun();
   snd(440,40,.8,'sawtooth',.07);
 }
@@ -604,6 +610,8 @@ function popBoost(k){
   if(k==='shield')give('shield',BOOSTS.shield.t);else{reviveArmed=true;pops.push({s:'REVIVE READY',x:p.x,y:p.y+30,t:0})}
   snd(800,1600,.08,'square',.05);
 }
+// intro: run out of the cave (1.3s), stand while the lava pours in, jump onto the vine at JUMP
+const JUMP=3.2;
 function play(){reset();state='intro';firstRun=!save.runs&&!best;save.runs=(save.runs||0)+1;store();snd(330,660,.15)}
 function quit(){endRun();reset();state='title'}
 function hit(){
@@ -1070,9 +1078,9 @@ function update(dt){
   if(state==='intro'){
     it+=dt;
     if(it<1.3){p.x=-6+78*(it/1.3);p.y=0;p.anim+=dt*10}
-    else if(it<2){p.x=72;if(shake<1.5)shake=1.5;if(Math.random()<.15)snd(60,40,.12,'triangle',.08)}
-    if(it>=1.6)lavaY+=14*dt;
-    if(it>=2){const k=Math.min(1,(it-2)/.4);p.y=22*k+Math.sin(k*Math.PI)*10;
+    else if(it<JUMP){p.x=72;if(it<2.1){if(shake<1.5)shake=1.5;if(Math.random()<.15)snd(60,40,.12,'triangle',.08)}} // stops, the ground shakes, then he watches the lava pour
+    if(it>=JUMP-.4)lavaY+=14*dt;
+    if(it>=JUMP){const k=Math.min(1,(it-JUMP)/.4);p.y=22*k+Math.sin(k*Math.PI)*10;
       if(k>=1){state='play';playT=0;p.y=22;
         // boosts from the shop float up in bubbles for 5s; pop one to use it this run, or leave it in stock
         const ks=['shield','revive'].filter(k=>save.boost[k]>0);if(ks.length)offer={t:OFFER_T,ks,all:[...ks]}}}
@@ -1193,11 +1201,21 @@ function update(dt){
     if(hands()>=ropeSafeY)for(const s of segs)if(isGap(s)&&s.lane===p.lane&&Math.abs(p.x-LX[s.lane])<5&&grip()>=s.y0&&hands()<s.y1){if(pT.rope>0)useRope();else die('fall');break}
     if(state==='play'&&lavaY>=p.y+2)die('burn');
   } else if(state==='dead'){
-    deadT+=dt;lavaY+=10*dt;
-    if(reviveArmed&&!revived&&deadT>.7){reviveArmed=false;revive(true)} // a revive popped at the start brings you straight back
-    if(deathKind==='fall'){p.vy-=300*dt;p.y+=p.vy*dt}else p.y-=10*dt;
+    // the death plays out before the panel: a fall drops all the way into the lava with a splash, a burn sinks
+    // slowly in a puff of smoke. the camera follows the fall so you see where you landed
+    deadT+=dt;
+    if(deathKind==='fall'&&splashT<0){
+      p.vy-=260*dt;p.y+=p.vy*dt;lavaY+=4*dt;
+      if(p.y<=lavaY+3){splashT=deadT;p.y=lavaY+3;shake=5;snd(140,40,.5,'sawtooth',.08);
+        for(let i=0;i<22;i++)parts.push({x:p.x+(Math.random()-.5)*8,y:lavaY+2,vx:(Math.random()-.5)*50,vy:40+Math.random()*70,g:220,l:.6+Math.random()*.5,c:['o','y','r'][i%3]})}
+    }else{
+      p.y-=7*dt;
+      if(Math.random()<.35)parts.push({x:p.x+(Math.random()-.5)*10,y:p.y+4+Math.random()*10,vx:(Math.random()-.5)*6,vy:8,g:-15,l:.9+Math.random()*.6,c:Math.random()<.5?'#5f574f':'#83769c'});
+      if(Math.random()<.15)parts.push({x:p.x+(Math.random()-.5)*8,y:lavaY+2,vy:30+Math.random()*30,g:150,l:.5,c:Math.random()<.5?'o':'y'});
+    }
+    if(reviveArmed&&!revived&&deadT>panelAt()+.8){reviveArmed=false;revive(true)} // a revive popped at the start brings you straight back
   }
-  if(state!=='dead'){const tg=Math.max(-20,p.y-70);camY+=(tg-camY)*Math.min(1,dt*8)}
+  if(state!=='dead'||deathKind==='fall'&&splashT<0){const tg=Math.max(-20,p.y-70);camY+=(tg-camY)*Math.min(1,dt*(state==='dead'?5:8))}
   if(Math.random()<.3)bubbles.push({x:Math.random()*W,l:.4});
   bubbles=bubbles.filter(b=>(b.l-=dt)>0);
 }
@@ -1405,7 +1423,7 @@ function drawPlayer(){
   const x=p.x-6,y=sy(p.y)-18;
   const tint=state==='dead'&&deathKind==='burn'?((T*10|0)%2?'r':'k'):null;
   if(state==='intro'&&it<1.3){const i=(p.anim|0)%4;drawSpr(RUN[i],x,y-(i%2?.5:0),tint,PAL)}
-  else if(state==='intro'&&it<2)drawSpr(STAND,x,y,tint,PAL);
+  else if(state==='intro'&&it<JUMP)drawSpr(STAND,x,y,tint,PAL);
   else if(state==='dead')drawSpr(FALL,x,y,tint,PAL);
   else if(p.stun>0)drawSpr(HIT,x,y,tint,PAL);
   else drawSpr(CLIMB[(p.anim|0)%4],x,y,tint,PAL);
@@ -1561,22 +1579,28 @@ const LOGO_PAL={
   gold:{face:['#fff27a','#ffd23a','#ffaa1c','#f07a12'],hi:'#fffbd0',sh:'#b84a0c',ex:['#c4520e','#8a3008','#5a1c04'],crack:'#4a1a04',speck:'#e8901a'},
   green:{face:['#c8ff9a','#7cf06a','#3cc85a','#1e9a48'],hi:'#eaffd8',sh:'#127038',ex:['#14703a','#0c4a26','#062a16'],crack:'#063018',speck:'#34b856'}};
 const LOGO_PAD=8;
-function makeLogo(word,pal,seed,vines){
-  const n=6,a=33,pad=LOGO_PAD,gh=7*n,d=5,Wd=W*S,Hd=pad+gh+d+(vines?18:pad);
-  const x0=Math.round((Wd-(word.length*a-3))/2),y0=pad;
+// n: screen px per font pixel. letters are chunky and rounded (each font pixel is a slightly overlapping dot) and
+// sit on a gentle wave, which reads friendlier than the thin square font
+function makeLogo(word,pal,seed,vines,n){
+  const R=n*.74,lw=Math.ceil(5*n+2*(R-n/2)),a=lw+Math.round(n*.7),pad=LOGO_PAD,wave=Math.round(n*.45),gh=7*n,d=Math.round(n*.9),Wd=W*S,Hd=pad+wave*2+gh+d+(vines?18:pad);
+  const x0=Math.round((Wd-(word.length*a-(a-lw)))/2),y0=pad+wave;
   let s=seed;const rnd=()=>(s=(s*16807)%2147483647)/2147483647;
   const M=new Uint8Array(Wd*Hd),C=new Uint8Array(Wd*Hd),id=(x,y)=>y*Wd+x,inM=(x,y)=>x>=0&&y>=0&&x<Wd&&y<Hd&&M[id(x,y)]===1;
-  const lxs=[...word].map((ch,i)=>{const lx=x0+i*a;for(const [gx,gy,gw] of glyph(ch,n))for(let k=0;k<gw;k++)M[id(lx+gx+k,y0+gy)]=1;return lx});
-  // chipped corners, then worn edges
-  for(const lx of lxs)for(let q=0,c=1+(rnd()*2|0);q<c;q++){
-    const px=lx+(rnd()<.5?1:28)+(rnd()*4|0)-2,py=y0+(rnd()<.5?1:gh-2)+(rnd()*6|0)-3,r=2.5+rnd()*2.5;
+  const lys=[];
+  const lxs=[...word].map((ch,i)=>{const lx=x0+i*a,ly=y0+Math.round(Math.sin(i*1.2+seed%7)*wave);lys.push(ly);const o=R-n/2;
+    F[ch].forEach((row,r)=>row.forEach((c,cc)=>{if(c!=='#')return;const cx_=lx+o+(cc+.5)*n,cy_=ly+o*0+(r+.5)*n;
+      for(let y=Math.floor(cy_-R);y<=cy_+R;y++)for(let x=Math.floor(cx_-R);x<=cx_+R;x++)if((x+.5-cx_)**2+(y+.5-cy_)**2<=R*R&&x>=0&&y>=0&&x<Wd&&y<Hd)M[id(x,y)]=1}));
+    return lx});
+  // a few small chips, then worn edges
+  for(const lx of lxs)for(let q=0,c=rnd()<.5?1:0;q<c;q++){
+    const px=lx+(rnd()<.5?1:lw-2)+(rnd()*4|0)-2,py=y0+(rnd()<.5?1:gh-2)+(rnd()*6|0)-3,r=1.5+rnd()*2;
     for(let y=-6;y<=6;y++)for(let x=-6;x<=6;x++)if(x*x+y*y<r*r&&inM(px+x,py+y))M[id(px+x,py+y)]=0;
   }
   const edge=[];for(let y=0;y<Hd;y++)for(let x=0;x<Wd;x++)if(inM(x,y)&&!(inM(x-1,y)&&inM(x+1,y)&&inM(x,y-1)&&inM(x,y+1)))edge.push([x,y]);
-  for(const [x,y] of edge)if(rnd()<.07)M[id(x,y)]=0;
+  for(const [x,y] of edge)if(rnd()<.03)M[id(x,y)]=0;
   // cracks: jagged lines running down through the letters, now and then splitting
   const crack=(x,y,dx,len)=>{for(let i=0;i<len;i++){if(inM(x,y))C[id(x,y)]=1;y++;if(rnd()<.5)x+=dx;if(rnd()<.18)dx=-dx;if(rnd()<.07)crack(x,y,-dx,5+rnd()*6|0)}};
-  for(const lx of lxs)if(rnd()<.65)crack(lx+5+(rnd()*20|0),y0+(rnd()*8|0),rnd()<.5?-1:1,16+(rnd()*22|0));
+  for(const lx of lxs)if(rnd()<.45)crack(lx+n+(rnd()*(lw-2*n)|0),y0+(rnd()*n|0),rnd()<.5?-1:1,(10+rnd()*18|0)*n/5|0);
   // pixels: face (banded gradient with a dithered seam, bevelled edges, cracks), extruded side, 2px outline
   const ex=new Uint8Array(Wd*Hd);
   for(let y=0;y<Hd;y++)for(let x=0;x<Wd;x++)if(!inM(x,y))for(let k=1;k<=d;k++)if(inM(x,y-k)){ex[id(x,y)]=k;break}
@@ -1585,14 +1609,14 @@ function makeLogo(word,pal,seed,vines){
     const set=(x,y,h,al=255)=>{const [r,gg,b]=rgb(h),o=id(x,y)*4;D[o]=r;D[o+1]=gg;D[o+2]=b;D[o+3]=al};
     for(let y=0;y<Hd;y++)for(let x=0;x<Wd;x++){
       if(inM(x,y)){
-        const t=(y-y0)/gh*3,b=Math.floor(t),fr=t-b,band=Math.min(3,b+(fr>.72&&(x+y)&1?1:0));
+        const li=Math.max(0,Math.min(lys.length-1,(x-x0)/a|0)),t=Math.max(0,(y-lys[li])/gh*3),b=Math.floor(t),fr=t-b,band=Math.min(3,b+(fr>.72&&(x+y)&1?1:0));
         let c=pal.face[band];
         if(C[id(x,y)])c=pal.crack;
         else if(C[id(x-1,y)]||C[id(x,y-1)])c=pal.hi;                       // light lip beside a crack
         else if(!inM(x,y-1)||!inM(x,y-2))c=pal.hi;                         // top bevel
         else if(!inM(x-1,y))c=pal.face[0];
         else if(!inM(x,y+1)||!inM(x+1,y))c=pal.sh;                         // shaded bottom/right
-        else if(rnd()<.035)c=pal.speck;                                   // weathering
+        else if(rnd()<.012)c=pal.speck;                                   // weathering
         set(x,y,c);
       }else if(ex[id(x,y)])set(x,y,pal.ex[Math.min(2,(ex[id(x,y)]-1)*3/d|0)]);
       else{let near=false;for(let dy=-2;dy<=2&&!near;dy++)for(let dx=-2;dx<=2;dx++)if(solid(x+dx,y+dy)){near=true;break}if(near)set(x,y,'#000000')}
@@ -1612,7 +1636,7 @@ function makeLogo(word,pal,seed,vines){
     for(let q=0;q<2;q++){const sx=lxs[(rnd()*(lxs.length-1))|0]-2,len=45+rnd()*40,cy=y0+gh*(.3+.4*rnd()),ph=rnd()*6;
       for(let i=0;i<len;i++){const x=sx+i|0,y=cy+6*Math.sin(i*.11+ph)|0;stem(x,y);if(i%9===4)leaf(x,y,i%18<9?1:-1)}}
     // vines hanging off the bottom of some letters
-    for(const lx of lxs)if(rnd()<.6){let x=lx+4+(rnd()*22|0);const y1=y0+gh+d,len=6+rnd()*8|0;
+    for(const lx of lxs)if(rnd()<.6){let x=lx+4+(rnd()*(lw-8)|0);const y1=y0+wave+gh+d,len=6+rnd()*8|0;
       for(let i=0;i<len;i++){const y=y1-3+i;if(rnd()<.25)x+=rnd()<.5?-1:1;put(x-1,y,'#0b2a12');put(x+1,y,'#0b2a12');put(x,y,'#4f9a2a');if(i%4===2)leaf(x,y,i%8<4?1:-1)}
       put(x,y1-3+len,'#86d43a')}
   }
@@ -1634,14 +1658,14 @@ function torch(x,y,i){
 }
 let logo,tfx=[],tfxT=0;
 function drawLogo(){
-  if(!logo)logo=[makeLogo('DUNGEON',LOGO_PAL.gold,7919,false),makeLogo('CLIMB',LOGO_PAL.green,104729,true)];
+  if(!logo)logo=[makeLogo('DUNGEON',LOGO_PAL.gold,7919,false,4),makeLogo('CLIMB',LOGO_PAL.green,104729,true,5)];
   const dt=Math.min(.05,Math.max(0,T-tfxT));tfxT=T;
   // embers drifting up, from the floor and the torches
   if(Math.random()<dt*6)tfx.push({x:16+Math.random()*112,y:250,vx:0,vy:-(8+Math.random()*14),g:0,l:4+Math.random()*4,c:Math.random()<.5?'o':'y',w:Math.random()*6});
   for(const [x,i] of [[6,0],[138,1]]){torch(x,112,i);if(Math.random()<dt*2.5)tfx.push({x:x+(Math.random()-.5)*2,y:100,vx:(x<72?4:-4),vy:-(10+Math.random()*10),g:0,l:2+Math.random()*2,c:Math.random()<.6?'o':'y',w:Math.random()*6})}
   // every few seconds the ruin rumbles: the logo shakes and dust falls from under the letters
   const ph=T%4.5,rum=ph<.7,amp=rum?1-ph/.7:0;
-  [[logo[0],28],[logo[1],56]].forEach(([L,top])=>{
+  [[logo[0],30],[logo[1],52]].forEach(([L,top])=>{
     const jx=rum?Math.round((Math.random()-.5)*4*amp):0,jy=rum?Math.round((Math.random()-.5)*2*amp):0,oy=top*S-LOGO_PAD;
     cx.drawImage(L.can,jx,oy+jy);
     if(rum&&Math.random()<.6)for(let q=0;q<2;q++){const [x,y]=L.dust[Math.random()*L.dust.length|0];
@@ -1656,7 +1680,7 @@ function drawTitle(){
   bankSlot(save.bank,130,8,'y');
   {const s='BEST '+best,w=tw(s,1);inset((W-w)/2-5,88,w+10,12);txt(s,'c',90.5,1,'y')}
   // big pulsing TAP TO PLAY (tapping anywhere that isn't a button starts); drawn once, then scaled
-  if(!tapPlay){tapPlay=document.createElement('canvas');tapPlay.width=W*S;tapPlay.height=24*S;heading('TAP TO PLAY',4,2,'y','w','#8a4f00',0,tapPlay.getContext('2d'))}
+  if(!tapPlay){tapPlay=document.createElement('canvas');tapPlay.width=W*S;tapPlay.height=24*S;heading('TAP TO PLAY',6,1.5,'y','w','#8a4f00',0,tapPlay.getContext('2d'))}
   if(!settingsOpen){const s=.97+.05*Math.sin(T*4),cy=134;cx.imageSmoothingEnabled=false;
     cx.drawImage(tapPlay,(W*S*(1-s))/2,cy*S-12*S*s,W*S*s,24*S*s)}
   { // boosts waiting in stock (offered in bubbles when a run starts)
@@ -1695,7 +1719,7 @@ function tab(s,x,i,tw_=57){
   btns.push({x,y:27,w:tw_,h:16,fn:()=>{shopTab=i;snd(520,520,.04)}});
 }
 function drawShop(){
-  btn('',10,5,20,20,closeShop,{kind:'pink',round:true,icon:icoBack});
+  btn('',10,5,20,20,closeShop,{kind:'pink',icon:icoBack});
   const skins=shopMode==='skins';
   heading(skins?'SKINS':'SHOP',7,1.5,'o','y','#8a2a00');
   bankSlot(save.bank,130,10,T-shopNo<.4&&(T*16|0)%2?'r':'y'); // flashes red when you can't afford something
@@ -1817,20 +1841,23 @@ function drawHud(){
       btn('QUIT',32,135,80,22,quit,{kind:'red'});
     }
   }
-  if(state==='dead'&&reviveArmed&&!revived){if((T*6|0)%2)txt('REVIVING...','c',110,1.5,'y')} // the popped revive kicks in
-  else if(state==='dead'){
-    dim();panel(10,28,124,194);
+  if(state==='dead'&&reviveArmed&&!revived){if(deadT>panelAt()&&(T*6|0)%2)txt('REVIVING...','c',110,1.5,'y')} // the popped revive kicks in
+  else if(state==='dead'&&deadT>panelAt()){
+    // the panel drops in from above with a little bounce
+    const k=Math.min(1,(deadT-panelAt())/.35),e=1+2.2*Math.pow(k-1,3)+1.2*Math.pow(k-1,2),oy=(1-e)*-200;
+    dim(Math.min(1,k*2));cx.save();cx.translate(0,Math.round(oy*S));
+    panel(10,30,124,152);
     const fell=deathKind==='fall';
-    heading(fell?'YOU FELL!':'TOO HOT!',38,2,fell?'#5a8cff':'o',fell?'b':'y',fell?'#1d2b53':'#8a2a00');
-    inset(30,60,84,30);txt('SCORE','c',63,.5,'l');txt(score(),'c',71,2,'w');
-    txt('HEIGHT '+m+'M   CLOSE CALLS '+closes,'c',95,.5,'l');
-    gemTxt('+'+gemCount,'c',103,1,'y');txt('BANK '+save.bank,'c',113,.5,'l');
-    if(newBest){if((T*4|0)%2)txt('NEW BEST!','c',120,1,'G')}else txt('BEST '+best,'c',121,.5,'y');
-    // buttons wake up after a moment so a swipe that was already on its way can't press one
-    const ok=deadT>.8,rv=canRevive();let y=rv?131:140;
-    if(rv){btn('REVIVE',24,y,96,26,ok&&(()=>revive()),{kind:'gold',sub:BOOSTS.revive.cost+' GEMS'});y+=29}
-    btn('RETRY',24,y,96,26,ok&&play,{kind:'go',sc:1.5});if(ok){arrow(19,y+9,1);arrow(125,y+9,-1)}y+=29;
-    btn('SHOP',24,y,47,20,ok&&(()=>openShop('up')),{kind:rv?'alt':'gold'});btn('HOME',73,y,47,20,ok&&(()=>{reset();state='title'}),{kind:'pink'});
+    heading(fell?'YOU FELL!':'TOO HOT!',40,2,fell?'#5a8cff':'o',fell?'b':'y',fell?'#1d2b53':'#8a2a00');
+    inset(30,62,84,30);txt('SCORE','c',65,.5,'l');txt(score(),'c',73,2,'w');
+    txt('HEIGHT '+m+'M   CLOSE CALLS '+closes,'c',97,.5,'l');
+    gemTxt('+'+gemCount,'c',105,1,'y');txt('BANK '+save.bank,'c',115,.5,'l');
+    if(newBest){if((T*4|0)%2)txt('NEW BEST!','c',122,1,'G')}else txt('BEST '+best,'c',123,.5,'y');
+    // two buttons, mirrored: home, and revive (for gems, once per run)
+    const ok=deadOk(),rv=canRevive();
+    btn('HOME',18,138,52,32,ok&&(()=>{reset();state='title'}),{kind:'pink',sc:1.5});
+    btn('REVIVE',74,138,52,32,ok&&rv&&(()=>revive()),{kind:rv?'gold':'off',sub:revived?'USED':BOOSTS.revive.cost+' GEMS'});
+    cx.restore();
   }
 }
 
