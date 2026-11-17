@@ -19,7 +19,7 @@ TODO.md tracks what's done and what's next. Design notes and fairness lessons: O
 - Bait gems start at 260M, power-ups at 300M
 - Power-ups all run on timers: shield 12s (absorbs one hit), rope 12s (saves one fall), magnet 8s, double gems 10s,
   lava cooled 8s. Shield and rope trigger on their own, the timer makes them a window to take risks in
-- Power-ups are rare (one every 14-24s of climbing) and come from a shuffled bag, never one that's still running.
+- Power-ups come one every 9-16s of climbing (14-24s felt too lonely) and come from a shuffled bag, never one that's still running.
   About 2 in 3 sit on a vine one lane off the gem trail, the rest float between the trail's vine and a neighbour
   and are grabbed by swiping across
 - Gems are banked between runs (orange 1, purple 3, red 6) and spent in the shop: power-up upgrades (5 levels,

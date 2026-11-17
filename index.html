@@ -34,7 +34,7 @@ const PUPS={shield:{c:'b',name:'SHIELD',short:'SHIELD',t:12},rope:{c:'#e0a060',n
   x2:{c:'y',name:'DOUBLE GEMS',short:'X2 GEMS',t:10},cool:{c:'w',name:'LAVA COOLED',short:'COOL LAVA',t:8}};
 const PUP_KINDS=['shield','rope','magnet','x2','cool'];
 // rare enough that each one matters: this many seconds of climbing between them (was 4-13)
-const PUP_GAP=[14,24];
+const PUP_GAP=[9,16]; // seconds of climbing between power-ups (was 14-24: too lonely)
 
 // everything you keep between runs: gem bank, power-up upgrade levels, outfits, boosts in stock
 let firstRun=false,save={runs:0,bank:0,up:{shield:0,rope:0,magnet:0,x2:0,cool:0},own:['explorer'],fit:'explorer',boost:{shield:0,revive:0}};
@@ -563,7 +563,7 @@ function move(d){
 }
 function tap(px,py){
   if(px===undefined){ // space / enter: the main action on each screen
-    if(state==='title'&&!settingsOpen)play();else if(state==='dead'&&deadOk()){reset();state='title'}else if(state==='play'&&paused)resume();
+    if(state==='title'&&!settingsOpen||state==='dead'&&deadOk())play();else if(state==='play'&&paused)resume();
     return;
   }
   const r=cv.getBoundingClientRect(),x=(px-r.left)/r.width*W,y=(py-r.top)/r.height*H;
@@ -1186,13 +1186,18 @@ function update(dt){
 
     for(const g of gems){
       if(g.got)continue;
-      if((pT.magnet>0||g.lane===p.lane&&Math.abs(p.x-LX[g.lane])<5)&&hands()>=g.y-5&&hands()<g.y+6){ // magnet: any lane
+      // magnet: gems coming up (or just passed) get caught and fly to you like a vacuum, wherever you move;
+      // once caught they keep coming even if the magnet runs out
+      if(pT.magnet>0&&!g.mag&&g.y-hands()<56&&g.y-hands()>-12){g.mag=true;g.mx=LX[g.lane]}
+      if(g.mag){const k=Math.min(1,dt*9);g.mx+=(p.x-g.mx)*k;g.y+=(hands()+1-g.y)*k}
+      const gx=g.mag?g.mx:LX[g.lane];
+      if(g.mag?Math.abs(p.x-g.mx)<4&&Math.abs(hands()+1-g.y)<5:g.lane===p.lane&&Math.abs(p.x-LX[g.lane])<5&&hands()>=g.y-5&&hands()<g.y+6){
         const m0=chainMult();chain++;lastGemT=T;
         const m=chainMult(),pts=g.tier.pts*m*(pT.x2>0?2:1);
         g.got=true;bonus+=pts;gemCount+=g.tier.pts/2; // bank value: orange 1, purple 3, red 6
         if(m>m0){pops.push({s:'CHAIN X'+m,x:p.x,y:p.y+30,t:0});snd(700,1400,.15,'square',.05)}
-        else if(g.bait)pops.push({s:'+'+pts,x:LX[g.lane],y:g.y+10,t:0,sc:.5});
-        for(let i=0;i<5;i++)parts.push({x:LX[g.lane]+Math.random()*4-2,y:g.y,vy:20+Math.random()*30,vx:(Math.random()-.5)*20,l:.35,c:g.tier.base});
+        else if(g.bait)pops.push({s:'+'+pts,x:gx,y:g.y+10,t:0,sc:.5});
+        for(let i=0;i<5;i++)parts.push({x:gx+Math.random()*4-2,y:g.y,vy:20+Math.random()*30,vx:(Math.random()-.5)*20,l:.35,c:g.tier.base});
         snd(900+Math.min(chain,50)*10,1500+Math.min(chain,50)*10,.08,'square',.03);
       }
     }
@@ -1309,9 +1314,7 @@ function drawGems(){
     if(g.got)continue;
     const ys=sy(g.y);
     if(ys<-10||ys>H+10)continue;
-    // magnet: gems slide across toward you as they come level
-    const pull=pT.magnet>0&&state==='play'?Math.max(0,Math.min(1,1-(g.y-hands())/36)):0;
-    drawGem(LX[g.lane]+(p.x-LX[g.lane])*pull,ys+Math.sin(T*3+g.ph)*.8,g.tier,g.ph);
+    drawGem(g.mag?g.mx:LX[g.lane],ys+(g.mag?0:Math.sin(T*3+g.ph)*.8),g.tier,g.ph); // magnet-caught gems fly on their own
   }
 }
 // power-up pickups: each its own shape and colour (authored small, upscaled 1.5x and outlined like the creatures)
@@ -1554,6 +1557,7 @@ function btn(label,x,y,w,h,fn,o={}){
 const ico=(px,col='w')=>{for(const [d,c] of [[.5,'k'],[0,col]])for(const [x,y,w,h] of px)f(x+d,y+d,w,h,c)};
 const icoPause=(x,y)=>ico([[x-2.5,y-3,2,6],[x+.5,y-3,2,6]]);
 const icoBack=(x,y)=>ico([[x-3,y-.5,6.5,1.5],[x-2,y-1.5,1,3.5],[x-1,y-2.5,1,5.5],[x,y-3.5,1,1],[x,y+2,1,1]]);
+const icoHome=(x,y)=>{ico([[x-4.5,y-.5,9,1],[x-3.5,y-1.5,7,1],[x-2.5,y-2.5,5,1],[x-1.5,y-3.5,3,1],[x-3,y+.5,6,4]]);f(x-.75,y+2,1.5,2.5,'#6e3080')};
 const icoX=(x,y)=>{const px=[];for(let i=0;i<6;i++){px.push([x-3+i,y-3+i,1.5,1]);px.push([x+1.5-i,y-3+i,1.5,1])}ico(px)};
 // a chunky 3D cog that turns in steps, like an old 8-frame sprite
 function cog(x,y,R){
@@ -1853,10 +1857,13 @@ function drawHud(){
     txt('HEIGHT '+m+'M   CLOSE CALLS '+closes,'c',97,.5,'l');
     gemTxt('+'+gemCount,'c',105,1,'y');txt('BANK '+save.bank,'c',115,.5,'l');
     if(newBest){if((T*4|0)%2)txt('NEW BEST!','c',122,1,'G')}else txt('BEST '+best,'c',123,.5,'y');
-    // two buttons, mirrored: home, and revive (for gems, once per run)
     const ok=deadOk(),rv=canRevive();
-    btn('HOME',18,138,52,32,ok&&(()=>{reset();state='title'}),{kind:'pink',sc:1.5});
-    btn('REVIVE',74,138,52,32,ok&&rv&&(()=>revive()),{kind:rv?'gold':'off',sub:revived?'USED':BOOSTS.revive.cost+' GEMS'});
+    // same shape as the home row: small square HOME, big RETRY in the middle, small square REVIVE (for gems)
+    btn('',16,136,28,28,ok&&(()=>{reset();state='title'}),{kind:'pink',icon:icoHome});
+    btn('RETRY',47,134,50,32,ok&&play,{kind:'go',sc:1.5});
+    btn('',100,136,28,28,ok&&rv&&(()=>revive()),{kind:rv?'gold':'off',icon:(x,y)=>drawIcon('revive',x,y)});
+    txt('HOME',30-tw('HOME',.5)/2,167,.5,'l');
+    {const s=revived?'USED':BOOSTS.revive.cost+' GEMS';txt(s,114-tw(s,.5)/2,167,.5,rv?'y':'#83769c')}
     cx.restore();
   }
 }
