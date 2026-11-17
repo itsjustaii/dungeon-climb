@@ -37,7 +37,7 @@ const PUP_KINDS=['shield','rope','magnet','x2','cool'];
 const PUP_GAP=[14,24];
 
 // everything you keep between runs: gem bank, power-up upgrade levels, outfits, boosts in stock
-let save={bank:0,up:{shield:0,rope:0,magnet:0,x2:0,cool:0},own:['explorer'],fit:'explorer',boost:{shield:0,revive:0}};
+let firstRun=false,save={runs:0,bank:0,up:{shield:0,rope:0,magnet:0,x2:0,cool:0},own:['explorer'],fit:'explorer',boost:{shield:0,revive:0}};
 try{const q=JSON.parse(localStorage.getItem('lavaclimb_save')||'null');if(q)save={...save,...q,up:{...save.up,...q.up},boost:{...save.boost,...q.boost}}}catch(e){}
 const store=()=>{try{localStorage.setItem('lavaclimb_save',JSON.stringify(save))}catch(e){}};
 // shop: each upgrade level makes that power-up last 15% longer; boosts are used up one per run
@@ -563,12 +563,15 @@ function move(d){
 }
 function tap(px,py){
   if(px===undefined){ // space / enter: the main action on each screen
-    if(state==='title'||state==='dead'&&deadT>.8)play();else if(state==='play'&&paused)resume();
+    if(state==='title'&&!settingsOpen||state==='dead'&&deadT>.8)play();else if(state==='play'&&paused)resume();
     return;
   }
   const r=cv.getBoundingClientRect(),x=(px-r.left)/r.width*W,y=(py-r.top)/r.height*H;
   const b=btns.find(b=>x>=b.x-1&&x<b.x+b.w+1&&y>=b.y-1&&y<b.y+b.h+1);
-  if(b)b.fn();else if(state==='play'&&paused)resume(); // anywhere else on the pause screen resumes
+  if(b)b.fn();
+  else if(state==='play'&&paused)resume(); // anywhere else on the pause screen resumes
+  else if(state==='shop'&&shopInfo)shopInfo=null; // tap outside the info panel closes it
+  else if(state==='title'){if(settingsOpen){settingsOpen=false;snd(660,440,.08)}else play()} // home: tap anywhere to play
 }
 function die(kind){
   deadY=p.y;state='dead';deathKind=kind;deadT=0;p.vy=kind==='fall'?55:0;shake=6; // a fall starts with a small hop off the vine end
@@ -591,7 +594,7 @@ function revive(){
   lavaY=Math.min(lavaY,p.y-FAR);
   paused=true;resumeT=RESUME;snd(330,990,.3,'square',.05);
 }
-function play(){reset();state='intro';snd(330,660,.15)}
+function play(){reset();state='intro';firstRun=!save.runs&&!best;save.runs=(save.runs||0)+1;store();snd(330,660,.15)}
 function quit(){endRun();reset();state='title'}
 function hit(){
   if(p.inv>0)return;
@@ -605,7 +608,7 @@ function hit(){
   p.stun=.45;p.inv=1;shake=5;combo=0;breakChain();snd(220,50,.25,'sawtooth',.08);
   // second hit while the lava is still at your heels: it catches you. otherwise it surges up close.
   if(surge>0){caught=true;p.stun=9}
-  else if(pT.cool<=0){surge=SURGE;beat=0;p.inv=1.5;if(hints<3){hints++;hintT=3;try{localStorage.setItem('lavaclimb_hint',hints)}catch(e){}}snd(60,180,.5,'sawtooth',.07)} // longer no-hit time, so one trap pattern can't land both hits
+  else if(pT.cool<=0){surge=SURGE;beat=0;p.inv=1.5;if(hints<1){hints++;hintT=3;try{localStorage.setItem('lavaclimb_hint',hints)}catch(e){}}snd(60,180,.5,'sawtooth',.07)} // longer no-hit time, so one trap pattern can't land both hits
 }
 
 // fire jets: a wall vent warns, then fire covers 1-2 lanes from its side.
@@ -1454,30 +1457,84 @@ function arrow(x,y,dir,c='y'){
   for(const [d,col] of [[1,'k'],[0,c]])for(let i=0;i<4;i++)f(x+d+(dir>0?i:-i-1),y+d+i,1,8-2*i,col);
 }
 // big carved headings: outline, an extruded side in a darker shade, a two-tone face and a shine line (sp: px per letter)
-function heading(s,y,sc,c,hi,lo,sp){
+// g: draw into another canvas (used to cache the pulsing TAP TO PLAY)
+function heading(s,y,sc,c,hi,lo,sp,g=cx){
   s=''+s;const n=sc*S,a=sp||6*n,wd=[...s].reduce((t,ch)=>t+(ch===' '?4*n:a),0)-(sp?3:n),x0=Math.round((W*S-wd)/2),y0=Math.round(y*S),d=Math.max(2,Math.round(n*.75)),o=2;
-  const put=(dx,dy,col,top)=>{cx.fillStyle=P[col]||col;let xx=x0;for(const ch of s){if(F[ch])for(const [gx,gy,gw] of glyph(ch,n))if(top===undefined||gy<top)cx.fillRect(xx+gx+dx,y0+gy+dy,gw,1);xx+=ch===' '?4*n:a}};
+  const put=(dx,dy,col,top)=>{g.fillStyle=P[col]||col;let xx=x0;for(const ch of s){if(F[ch])for(const [gx,gy,gw] of glyph(ch,n))if(top===undefined||gy<top)g.fillRect(xx+gx+dx,y0+gy+dy,gw,1);xx+=ch===' '?4*n:a}};
   for(let dy=-o;dy<=d+o;dy++)for(const dx of dy===-o||dy===d+o?[-o,0,o]:[-o,o])put(dx,dy,'k');
   for(let dy=d;dy>0;dy--)put(0,dy,lo);
   put(0,0,c);put(0,0,hi,3*n);
-  cx.globalAlpha=.7;put(0,0,'w',Math.max(1,n>>2));cx.globalAlpha=1;
+  g.globalAlpha=.7;put(0,0,'w',Math.max(1,n>>2));g.globalAlpha=1;
 }
 
-const BTN={go:['#00a84a','#7dff6a','#00532a','w'],alt:['#4b5a86','#8d9ccc','#222a48','w'],gold:['#e08c00','#ffe060','#7a3f00','w'],off:['#3a3346','#5a5068','#1a1622','#9d90b0']};
-// o: kind (colours), sc (label size), gem (gem in front of the label, for prices), sub (small second line)
+// block buttons: a stepped-corner slab (or a pixel circle) with a gradient face and a thick darker side underneath.
+// shape() fills it row by row; c is a colour or (row,rows)=>colour
+// rows of a rounded slab: [x, y, width, row, rows]; corner radius r (round: a full pixel circle)
+function slabRows(x,y,w,h,round){
+  const n=Math.round(h*2),out=[],r=round?h/2:Math.min(4,h/4);
+  for(let i=0;i<n;i++){
+    const e=Math.min(i,n-1-i)/2+.25;let ins=0;
+    if(e<r)ins=Math.ceil((r-Math.sqrt(r*r-(r-e)*(r-e)))*(round?w/h:1)*2)/2;
+    if(w>2*ins)out.push([x+ins,y+i/2,w-2*ins,i,n]);
+  }
+  return out;
+}
+function shape(x,y,w,h,c,round){for(const [xx,yy,ww,i,n] of slabRows(x,y,w,h,round))f(xx,yy,ww,.5,typeof c==='function'?c(i,n):c)}
+// rim (top edge), top, face, low (bottom of the face), side, sd (bottom of the side), out (outline), tc (text)
+const BK={
+  go:  {rim:'#d4ff8a',top:'#7ae04a',face:'#3cb43a',low:'#2a8f34',side:'#1f6e3a',sd:'#134a2a',out:'#0b2418',tc:'w'},
+  gold:{rim:'#fff3a0',top:'#ffd23a',face:'#ffa21c',low:'#f07a12',side:'#c8461a',sd:'#8a2814',out:'#3a1008',tc:'w'},
+  alt: {rim:'#c0f6ff',top:'#5ed8f8',face:'#28a8e8',low:'#1a80d0',side:'#1a50b0',sd:'#123480',out:'#0a1636',tc:'w'},
+  pink:{rim:'#ffd0ec',top:'#f088c8',face:'#c858b0',low:'#a84298',side:'#6e3080',sd:'#4a2260',out:'#1e0e28',tc:'w'},
+  red: {rim:'#ffc080',top:'#ff7a3a',face:'#e8441e',low:'#c42a1a',side:'#8e1a1e',sd:'#5e1018',out:'#2a080a',tc:'w'},
+  grey:{rim:'#eef0f6',top:'#b4bccc',face:'#8a92a6',low:'#727a8e',side:'#4e5468',sd:'#343848',out:'#14161e',tc:'w'},
+  off: {rim:'#8a90a2',top:'#6a7184',face:'#585e70',low:'#4a5062',side:'#343846',sd:'#24262f',out:'#0e1016',tc:'#b8bccb'}};
+// o: kind (colours), sc (label size), gem (gem in front of the label, for prices), sub (small second line),
+//    round (pixel circle), icon (draws on the face: (cx,cy)=>...), still (no shine sweep)
 function btn(label,x,y,w,h,fn,o={}){
-  const [face,hi,lo,tc]=BTN[o.kind||'alt'],sc=o.sc||1,D=2;
-  const pr=fn&&ptr&&ptr.x>=x&&ptr.x<x+w&&ptr.y>=y&&ptr.y<y+h?1.5:0,fy=y+.5+pr,fh=h-1-D;
-  shadow(x,y,w,h);rr(x,y,w,h,'k',1.5);
-  rr(x+.5,fy,w-1,h-1-pr,lo,1);rr(x+.5,fy,w-1,fh,face,1);
-  f(x+1.5,fy+.5,w-3,1,hi);                                  // top shine
-  cx.globalAlpha=.35;f(x+1,fy+fh-1,w-2,1,lo);cx.globalAlpha=1; // shade along the bottom of the face
-  if(o.kind!=='off'){f(x+1.5,fy+1.5,1.5,1,'w');f(x+1.5,fy+2.5,.5,1,'w')} // glint in the corner
-  const g=o.gem?8:0,lx=x+(w-tw(label,sc)-g)/2,ly=fy+(fh-7*sc-(o.sub?6:0))/2;
-  if(g)drawGem(lx+3,ly+3.5*sc,GEM_TIERS[0],0);
-  txt(label,lx+g,ly,sc,tc);
-  if(o.sub)txt(o.sub,x+(w-tw(o.sub,.5))/2,ly+7*sc+2.5,.5,tc);
+  const k=BK[o.kind||'alt'],sc=o.sc||1,round=o.round,SD=Math.max(2.5,Math.round(h*.2*2)/2); // thick side, like a slab
+  const pr=fn&&ptr&&ptr.x>=x&&ptr.x<x+w&&ptr.y>=y&&ptr.y<y+h?SD-.5:0,fy=y+.5+pr,fh=h-1-SD;
+  cx.globalAlpha=.45;shape(x+1,y+1.5,w,h,'k',round);cx.globalAlpha=1;
+  shape(x,y,w,h,k.out,round);
+  shape(x+.5,y+.5+pr,w-1,h-1-pr,(i,n)=>i>=n-3?k.sd:k.side,round);
+  shape(x+.5,fy,w-1,fh,(i,n)=>i<2?k.rim:i<n*.42?k.top:i<n-3?k.face:k.low,round);
+  if(o.kind!=='off'){const gx=x+(round?w*.28:Math.min(4,h/4)+.5);f(gx,fy+1.5,1.5,.5,'w');f(gx,fy+2,.5,.5,'w')} // glint
+  // a light streak sweeps across now and then (menus only), each button at its own time
+  if(!o.still&&!pr&&o.kind!=='off'){
+    const ph=(T+hash(x*.37+y*1.31)*3.6)%3.6;
+    if(ph<.7){
+      const sx=x-8+ph/.7*(w+16);cx.save();cx.beginPath();
+      for(const [xx,yy,ww] of slabRows(x+1,fy+.5,w-2,fh-1,round))cx.rect(Math.round(xx*S),Math.round(yy*S),Math.round(ww*S),1); // stays inside the button's own outline
+      cx.clip();cx.globalAlpha=.4;
+      for(let r=0;r<fh;r+=.5){const xx=sx-r*.6;f(xx,fy+r,3,.5,'w');f(xx+4.5,fy+r,1,.5,'w')}
+      cx.restore();
+    }
+  }
+  if(o.icon)o.icon(x+w/2,fy+fh/2);
+  if(label){
+    const g=o.gem?8:0,lx=x+(w-tw(label,sc)-g)/2,ly=fy+(fh-7*sc-(o.sub?6:0))/2;
+    if(g)drawGem(lx+3,ly+3.5*sc,GEM_TIERS[0],0);
+    txt(label,lx+g,ly,sc,k.tc);
+    if(o.sub)txt(o.sub,x+(w-tw(o.sub,.5))/2,ly+7*sc+2.5,.5,k.tc);
+  }
   if(fn)btns.push({x,y,w,h,fn});
+}
+// icons for round buttons, drawn in white with a dark drop
+const ico=(px,col='w')=>{for(const [d,c] of [[.5,'k'],[0,col]])for(const [x,y,w,h] of px)f(x+d,y+d,w,h,c)};
+const icoPause=(x,y)=>ico([[x-2.5,y-3,2,6],[x+.5,y-3,2,6]]);
+const icoBack=(x,y)=>ico([[x-3,y-.5,6.5,1.5],[x-2,y-1.5,1,3.5],[x-1,y-2.5,1,5.5],[x,y-3.5,1,1],[x,y+2,1,1]]);
+const icoX=(x,y)=>{const px=[];for(let i=0;i<6;i++){px.push([x-3+i,y-3+i,1.5,1]);px.push([x+1.5-i,y-3+i,1.5,1])}ico(px)};
+// a chunky 3D cog that turns in steps, like an old 8-frame sprite
+function cog(x,y,R){
+  const a=((T*7|0)%8)*Math.PI/32,cells=[];
+  for(let yy=-R-1;yy<=R+1;yy+=.5)for(let xx=-R-1;xx<=R+1;xx+=.5){
+    const cx_=xx+.25,cy_=yy+.25,d=Math.hypot(cx_,cy_),th=Math.atan2(cy_,cx_),tooth=Math.cos(8*(th-a))>.25;
+    if(d<R*.32)continue;
+    if(d<R*.72||(d<R&&tooth))cells.push([xx,yy]);
+  }
+  for(const [xx,yy] of cells)f(x+xx-.5,y+yy-.5,1.5,2.5,'k');             // outline, including below the side
+  for(const [xx,yy] of cells)f(x+xx,y+yy,.5,1.5,'#4e5468');              // the cog's side
+  for(const [xx,yy] of cells)f(x+xx,y+yy,.5,.5,yy<-R*.35?'#ffffff':yy<R*.3?'#d8dce6':'#a4acbe');
 }
 // a number with a gem in front; x is the left edge, 'c' to centre, or {r} to right-align
 function gemTxt(v,x,y,sc,c){
@@ -1486,19 +1543,127 @@ function gemTxt(v,x,y,sc,c){
 }
 // gem counter sunk into a slot, right-aligned at x
 function bankSlot(v,r,y,c){const w=tw(''+v,1)+8;inset(r-w-3,y-2.5,w+6,12);gemTxt(v,{r},y,1,c)}
+// ---- title logo: carved stone letters, chipped and cracked; CLIMB overgrown with vines. built once into a canvas
+const LOGO_PAL={
+  gold:{face:['#fff27a','#ffd23a','#ffaa1c','#f07a12'],hi:'#fffbd0',sh:'#b84a0c',ex:['#c4520e','#8a3008','#5a1c04'],crack:'#4a1a04',speck:'#e8901a'},
+  green:{face:['#c8ff9a','#7cf06a','#3cc85a','#1e9a48'],hi:'#eaffd8',sh:'#127038',ex:['#14703a','#0c4a26','#062a16'],crack:'#063018',speck:'#34b856'}};
+const LOGO_PAD=8;
+function makeLogo(word,pal,seed,vines){
+  const n=6,a=33,pad=LOGO_PAD,gh=7*n,d=5,Wd=W*S,Hd=pad+gh+d+(vines?18:pad);
+  const x0=Math.round((Wd-(word.length*a-3))/2),y0=pad;
+  let s=seed;const rnd=()=>(s=(s*16807)%2147483647)/2147483647;
+  const M=new Uint8Array(Wd*Hd),C=new Uint8Array(Wd*Hd),id=(x,y)=>y*Wd+x,inM=(x,y)=>x>=0&&y>=0&&x<Wd&&y<Hd&&M[id(x,y)]===1;
+  const lxs=[...word].map((ch,i)=>{const lx=x0+i*a;for(const [gx,gy,gw] of glyph(ch,n))for(let k=0;k<gw;k++)M[id(lx+gx+k,y0+gy)]=1;return lx});
+  // chipped corners, then worn edges
+  for(const lx of lxs)for(let q=0,c=1+(rnd()*2|0);q<c;q++){
+    const px=lx+(rnd()<.5?1:28)+(rnd()*4|0)-2,py=y0+(rnd()<.5?1:gh-2)+(rnd()*6|0)-3,r=2.5+rnd()*2.5;
+    for(let y=-6;y<=6;y++)for(let x=-6;x<=6;x++)if(x*x+y*y<r*r&&inM(px+x,py+y))M[id(px+x,py+y)]=0;
+  }
+  const edge=[];for(let y=0;y<Hd;y++)for(let x=0;x<Wd;x++)if(inM(x,y)&&!(inM(x-1,y)&&inM(x+1,y)&&inM(x,y-1)&&inM(x,y+1)))edge.push([x,y]);
+  for(const [x,y] of edge)if(rnd()<.07)M[id(x,y)]=0;
+  // cracks: jagged lines running down through the letters, now and then splitting
+  const crack=(x,y,dx,len)=>{for(let i=0;i<len;i++){if(inM(x,y))C[id(x,y)]=1;y++;if(rnd()<.5)x+=dx;if(rnd()<.18)dx=-dx;if(rnd()<.07)crack(x,y,-dx,5+rnd()*6|0)}};
+  for(const lx of lxs)if(rnd()<.65)crack(lx+5+(rnd()*20|0),y0+(rnd()*8|0),rnd()<.5?-1:1,16+(rnd()*22|0));
+  // pixels: face (banded gradient with a dithered seam, bevelled edges, cracks), extruded side, 2px outline
+  const ex=new Uint8Array(Wd*Hd);
+  for(let y=0;y<Hd;y++)for(let x=0;x<Wd;x++)if(!inM(x,y))for(let k=1;k<=d;k++)if(inM(x,y-k)){ex[id(x,y)]=k;break}
+  const solid=(x,y)=>x>=0&&y>=0&&x<Wd&&y<Hd&&(M[id(x,y)]||ex[id(x,y)]);
+  const img=g0=>{const im=g0.createImageData(Wd,Hd),D=im.data,rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+    const set=(x,y,h,al=255)=>{const [r,gg,b]=rgb(h),o=id(x,y)*4;D[o]=r;D[o+1]=gg;D[o+2]=b;D[o+3]=al};
+    for(let y=0;y<Hd;y++)for(let x=0;x<Wd;x++){
+      if(inM(x,y)){
+        const t=(y-y0)/gh*3,b=Math.floor(t),fr=t-b,band=Math.min(3,b+(fr>.72&&(x+y)&1?1:0));
+        let c=pal.face[band];
+        if(C[id(x,y)])c=pal.crack;
+        else if(C[id(x-1,y)]||C[id(x,y-1)])c=pal.hi;                       // light lip beside a crack
+        else if(!inM(x,y-1)||!inM(x,y-2))c=pal.hi;                         // top bevel
+        else if(!inM(x-1,y))c=pal.face[0];
+        else if(!inM(x,y+1)||!inM(x+1,y))c=pal.sh;                         // shaded bottom/right
+        else if(rnd()<.035)c=pal.speck;                                   // weathering
+        set(x,y,c);
+      }else if(ex[id(x,y)])set(x,y,pal.ex[Math.min(2,(ex[id(x,y)]-1)*3/d|0)]);
+      else{let near=false;for(let dy=-2;dy<=2&&!near;dy++)for(let dx=-2;dx<=2;dx++)if(solid(x+dx,y+dy)){near=true;break}if(near)set(x,y,'#000000')}
+    }
+    return im};
+  const can=document.createElement('canvas');can.width=Wd;can.height=Hd;const g=can.getContext('2d');
+  g.putImageData(img(g),0,0);
+  const put=(x,y,c)=>{g.fillStyle=c;g.fillRect(x,y,1,1)};
+  if(vines){
+    // moss tufts along the tops of the letters
+    for(let y=0;y<Hd;y++)for(let x=0;x<Wd;x++)if(inM(x,y)&&!inM(x,y-1)&&rnd()<.3){put(x,y-1,'#2e6b1a');if(rnd()<.5)put(x,y-2,'#5fbf3a');put(x,y,'#3f8a22')}
+    // a leaf: dark outline, two greens and a bright tip
+    const leaf=(x,y,dir)=>{for(const [dx,dy] of [[1,-1],[2,-2],[3,-2],[4,-2],[1,1],[2,1],[3,0],[4,-1],[5,-2],[0,0]])put(x+dx*dir,y+dy,'#0b2a12');
+      for(const [dx,dy] of [[1,0],[2,0],[2,-1],[3,-1]])put(x+dx*dir,y+dy,'#5fbf3a');put(x+4*dir,y-1,'#c8ff7a');put(x+1*dir,y,'#3f8a22')};
+    const stem=(x,y)=>{put(x,y-1,'#0b2a12');put(x,y+1,'#0b2a12');put(x,y,'#4f9a2a')};
+    // strands wrapping across the letters
+    for(let q=0;q<2;q++){const sx=lxs[(rnd()*(lxs.length-1))|0]-2,len=45+rnd()*40,cy=y0+gh*(.3+.4*rnd()),ph=rnd()*6;
+      for(let i=0;i<len;i++){const x=sx+i|0,y=cy+6*Math.sin(i*.11+ph)|0;stem(x,y);if(i%9===4)leaf(x,y,i%18<9?1:-1)}}
+    // vines hanging off the bottom of some letters
+    for(const lx of lxs)if(rnd()<.6){let x=lx+4+(rnd()*22|0);const y1=y0+gh+d,len=6+rnd()*8|0;
+      for(let i=0;i<len;i++){const y=y1-3+i;if(rnd()<.25)x+=rnd()<.5?-1:1;put(x-1,y,'#0b2a12');put(x+1,y,'#0b2a12');put(x,y,'#4f9a2a');if(i%4===2)leaf(x,y,i%8<4?1:-1)}
+      put(x,y1-3+len,'#86d43a')}
+  }
+  // where dust can fall from: under the letters
+  const dust=[];for(let y=0;y<Hd;y++)for(let x=0;x<Wd;x++)if(ex[id(x,y)]===d&&!solid(x,y+1))dust.push([x,y+1]);
+  return {can,dust};
+}
+// torch on the side wall: bracket, stick, flickering flame and a warm glow
+function torch(x,y,i){
+  const fl=.85+.12*Math.sin(T*13+i*2)+.08*Math.sin(T*31+i*5);
+  const gr=cx.createRadialGradient(x*S,(y-9)*S,0,x*S,(y-9)*S,28*S*fl);gr.addColorStop(0,'rgba(255,150,40,.32)');gr.addColorStop(1,'rgba(255,110,20,0)');
+  cx.fillStyle=gr;cx.fillRect((x-30)*S,(y-40)*S,60*S,62*S);
+  f(x-3,y+1,6,2,'k');f(x-2.5,y+1.5,5,1,'#5f574f');
+  f(x-1.5,y-5,3,7,'k');f(x-1,y-5,2,6.5,'#7a4a24');f(x,y-5,1,6.5,'#4a2a12');
+  f(x-3,y-7.5,6,3,'k');f(x-2.5,y-7,5,2,'#3a3436');f(x-2.5,y-7,5,.5,'#6e6670');
+  const h=7+2.5*fl;
+  for(let r=0;r<h;r+=.5){const t=r/h,wd=(t<.15?.6+t*2.7:1)*4.5*Math.pow(1-t,.8),sw=Math.sin(T*9+r*.7+i)*t*1.3,yy=y-7.5-r;
+    f(x-wd/2+sw,yy,wd,.5,'r');if(t<.75)f(x-wd*.33+sw,yy,wd*.66,.5,'o');if(t<.5)f(x-wd*.18+sw,yy,wd*.36,.5,'y');if(t<.2)f(x-.5+sw,yy,1,.5,'w')}
+}
+let logo,tfx=[],tfxT=0;
+function drawLogo(){
+  if(!logo)logo=[makeLogo('DUNGEON',LOGO_PAL.gold,7919,false),makeLogo('CLIMB',LOGO_PAL.green,104729,true)];
+  const dt=Math.min(.05,Math.max(0,T-tfxT));tfxT=T;
+  // embers drifting up, from the floor and the torches
+  if(Math.random()<dt*6)tfx.push({x:16+Math.random()*112,y:250,vx:0,vy:-(8+Math.random()*14),g:0,l:4+Math.random()*4,c:Math.random()<.5?'o':'y',w:Math.random()*6});
+  for(const [x,i] of [[6,0],[138,1]]){torch(x,112,i);if(Math.random()<dt*2.5)tfx.push({x:x+(Math.random()-.5)*2,y:100,vx:(x<72?4:-4),vy:-(10+Math.random()*10),g:0,l:2+Math.random()*2,c:Math.random()<.6?'o':'y',w:Math.random()*6})}
+  // every few seconds the ruin rumbles: the logo shakes and dust falls from under the letters
+  const ph=T%4.5,rum=ph<.7,amp=rum?1-ph/.7:0;
+  [[logo[0],28],[logo[1],56]].forEach(([L,top])=>{
+    const jx=rum?Math.round((Math.random()-.5)*4*amp):0,jy=rum?Math.round((Math.random()-.5)*2*amp):0,oy=top*S-LOGO_PAD;
+    cx.drawImage(L.can,jx,oy+jy);
+    if(rum&&Math.random()<.6)for(let q=0;q<2;q++){const [x,y]=L.dust[Math.random()*L.dust.length|0];
+      tfx.push({x:x/S,y:(oy+y)/S,vx:(Math.random()-.5)*6,vy:Math.random()*5,g:90,l:1+Math.random(),c:['#9a8f80','#6e6458','#c8bca8'][Math.random()*3|0],s:Math.random()<.15?1:.5})}
+  });
+  tfx=tfx.filter(q=>(q.l-=dt)>0&&q.y<260);
+  for(const q of tfx){q.vy+=q.g*dt;q.x+=(q.vx+(q.w!==undefined?Math.sin(T*2.5+q.w)*5:0))*dt;q.y+=q.vy*dt;
+    if(q.l>.5||(T*12|0)%2)f(q.x,q.y,q.s||.5,q.s||.5,q.c)}
+}
 function drawTitle(){
-  heading('DUNGEON',28,3,'o','y','#8a2a00',33);heading('CLIMB',56,3,'#00c040','#7dff6a','#00532a',33);
+  drawLogo();
   bankSlot(save.bank,130,8,'y');
   {const s='BEST '+best,w=tw(s,1);inset((W-w)/2-5,88,w+10,12);txt(s,'c',90.5,1,'y')}
-  btn('PLAY',30,114,84,28,play,{kind:'go',sc:1.5});arrow(22,124,1);arrow(122,124,-1);
-  btn('SHOP',30,148,84,22,openShop,{kind:'gold'});
-  if(save.boost.shield>0){const s='x'+save.boost.shield+' READY',x0=(W-tw(s,.5)-12)/2;drawIcon('shield',x0+5,180);txt(s,x0+12,178,.5,'l')}
-  txt('SWIPE TO SWITCH VINES','c',200,.5,'l');
+  // big pulsing TAP TO PLAY (tapping anywhere that isn't a button starts); drawn once, then scaled
+  if(!tapPlay){tapPlay=document.createElement('canvas');tapPlay.width=W*S;tapPlay.height=24*S;heading('TAP TO PLAY',4,2,'y','w','#8a4f00',0,tapPlay.getContext('2d'))}
+  if(!settingsOpen){const s=.97+.05*Math.sin(T*4),cy=134;cx.imageSmoothingEnabled=false;
+    cx.drawImage(tapPlay,(W*S*(1-s))/2,cy*S-12*S*s,W*S*s,24*S*s)}
+  if(save.boost.shield>0){const s='x'+save.boost.shield+' READY',x0=(W-tw(s,.5)-12)/2;drawIcon('shield',x0+5,172);txt(s,x0+12,170,.5,'l')}
+  // bottom row: skins, upgrades (biggest), settings cog
+  // mirrored around the middle: two equal side buttons, upgrades bigger in the centre
+  btn('SKINS',8,198,34,26,()=>openShop('skins'),{kind:'pink'});
+  btn('UPGRADES',45,194,54,30,()=>openShop('up'),{kind:'gold'});
+  btn('',102,198,34,26,()=>{settingsOpen=true;snd(440,660,.08)},{kind:'grey',icon:(x,y)=>cog(x,y,5.5)});
+  if(settingsOpen){
+    btns=[];dim();panel(20,78,104,92);
+    heading('SETTINGS',87,1.5,'o','y','#8a2a00');
+    btn('SOUND: '+(muted?'OFF':'ON'),32,112,80,22,()=>setMute(!muted),{kind:muted?'off':'alt'});
+    btn('CLOSE',32,139,80,22,()=>{settingsOpen=false;snd(660,440,.08)},{kind:'red'});
+  }
 }
+let tapPlay,settingsOpen=false;
 
-// shop: spend banked gems on longer power-ups, one-run boosts and outfits
-let shopTab=0,shopFrom='title',shopSel='explorer',shopNo=-9;
-function openShop(){shopFrom=state;state='shop';shopSel=save.fit;snd(440,660,.08)}
+// shop: spend banked gems on longer power-ups and one-run boosts ('up'), or on outfits ('skins')
+let shopTab=0,shopMode='up',shopFrom='title',shopSel='explorer',shopNo=-9;
+function openShop(m='up'){shopMode=m;shopTab=0;shopInfo=null;shopFrom=state;state='shop';shopSel=save.fit;snd(440,660,.08)}
 function closeShop(){state=shopFrom;snd(660,440,.08)}
 function buy(cost,fn){
   if(save.bank<cost){shopNo=T;snd(200,120,.15,'square',.05);return}
@@ -1506,30 +1671,34 @@ function buy(cost,fn){
 }
 const priceBtn=(cost,x,y,fn)=>btn(''+cost,x,y,36,19,()=>buy(cost,fn),{kind:save.bank>=cost?'go':'off',gem:true});
 // folder tab on top of the shop panel; the open one is stone and runs into the frame
-function tab(s,x,i){
+function tab(s,x,i,tw_=57){
   const on=i===shopTab,y=on?27:30,h=on?18:12;
-  rr(x,y,38,h,'k',1);
-  if(on){rr(x+.5,y+.5,37,h,STONE.hi,1);rr(x+1,y+1,36,h,STONE.face,1)}else{rr(x+.5,y+.5,37,h-1,'#2e2620',1);rr(x+.5,y+.5,37,h-1.5,'#5e5244',1);rr(x+1,y+1,36,h-2,'#4a4036',1)}
-  txt(s,x+(38-tw(s,.5))/2,y+(on?4:3.5),.5,on?'w':'#b5a690');
-  btns.push({x,y:27,w:38,h:16,fn:()=>{shopTab=i;snd(520,520,.04)}});
+  rr(x,y,tw_,h,'k',1);
+  if(on){rr(x+.5,y+.5,tw_-1,h,STONE.hi,1);rr(x+1,y+1,tw_-2,h,STONE.face,1)}else{rr(x+.5,y+.5,tw_-1,h-1,'#2e2620',1);rr(x+.5,y+.5,tw_-1,h-1.5,'#5e5244',1);rr(x+1,y+1,tw_-2,h-2,'#4a4036',1)}
+  txt(s,x+(tw_-tw(s,1))/2,y+(on?4:3),1,on?'w':'#b5a690');
+  btns.push({x,y:27,w:tw_,h:16,fn:()=>{shopTab=i;snd(520,520,.04)}});
 }
 function drawShop(){
-  btn('BACK',12,5,36,17,closeShop);
-  heading('SHOP',7,1.5,'o','y','#8a2a00');
+  btn('',10,5,20,20,closeShop,{kind:'pink',round:true,icon:icoBack});
+  const skins=shopMode==='skins';
+  heading(skins?'SKINS':'SHOP',7,1.5,'o','y','#8a2a00');
   bankSlot(save.bank,130,10,T-shopNo<.4&&(T*16|0)%2?'r':'y'); // flashes red when you can't afford something
-  const tabs=['UPGRADES','BOOSTS','OUTFITS'];
-  tabs.forEach((s,i)=>i!==shopTab&&tab(s,14+i*39,i));
+  const tabs=['UPGRADES','BOOSTS'];
+  if(!skins)tabs.forEach((s,i)=>i!==shopTab&&tab(s,14+i*59,i));
   panel(9,41,126,213,.85);
-  tab(tabs[shopTab],14+shopTab*39,shopTab);
-  const row=(y,h)=>card(14,y,116,h);
-  if(shopTab===0)PUP_KINDS.forEach((k,i)=>{
+  if(!skins)tab(tabs[shopTab],14+shopTab*59,shopTab);
+  const row=(y,h)=>card(14,y,116,h),page=skins?2:shopTab;
+  if(page===0)PUP_KINDS.forEach((k,i)=>{
     const y=47+i*40,lv=save.up[k],d=PUPS[k];row(y,37);
     drawIcon(k,24,y+13);txt(d.short,34,y+5,1,'w');
     for(let q=0;q<5;q++){f(34+q*7,y+16,6,3.5,'k');f(34.5+q*7,y+16.5,5,2.5,q<lv?d.c:'#3a3346');if(q<lv)f(34.5+q*7,y+16.5,5,.5,'w')}
     txt(pupDur(k).toFixed(1)+'S'+(lv<5?' > '+(d.t*(1+.15*(lv+1))).toFixed(1)+'S':''),34,y+24,.5,'l');
     if(lv<5)priceBtn(UP_COST[lv],92,y+9,()=>save.up[k]++);else txt('MAX',101,y+15,1,'y');
+    // little ? badge; tapping the row (not the price) explains the power-up
+    f(122,y+2,6,6,'k');f(122.5,y+2.5,5,5,'#4a3f63');txt('?',123.5,y+3,.5,'y',false);
+    btns.push({x:14,y,w:116,h:37,fn:()=>{shopInfo=k;snd(520,700,.06)}});
   });
-  else if(shopTab===1)[['shield','STARTER SHIELD',['A '+BOOSTS.shield.t+'S SHIELD AT THE','START OF A RUN']],['revive','REVIVE',['CARRY ON AFTER YOU','DIE. ONCE PER RUN']]].forEach(([k,name,desc],i)=>{
+  else if(page===1)[['shield','STARTER SHIELD',['A '+BOOSTS.shield.t+'S SHIELD AT THE','START OF A RUN']],['revive','REVIVE',['CARRY ON AFTER YOU','DIE. ONCE PER RUN']]].forEach(([k,name,desc],i)=>{
     const y=47+i*52,n=save.boost[k];row(y,48);
     drawIcon(k,24,y+13);txt(name,34,y+5,1,'w');
     desc.forEach((s,q)=>txt(s,34,y+17+q*6,.5,'l'));
@@ -1555,7 +1724,26 @@ function drawShop(){
     for(let yy=204;yy<246;yy++){f(71,yy,.5,1,'g');f(71.5,yy,1,1,'G');f(72.5,yy,.5,1,'g')}
     drawSpr(CLIMB[(T*9|0)%4],66,214,null,fitPal(o.id));
   }
+  if(shopInfo&&page===0){ // what a power-up does, from tapping its row
+    const k=shopInfo,d=PUPS[k],lv=save.up[k],lines=PUP_INFO[k];
+    btns=[];dim();panel(14,58,116,136);
+    drawIcon(k,W/2,72);heading(d.short,80,1.5,'o','y','#8a2a00');
+    lines.forEach((s,i)=>txt(s,'c',102+i*10,1,i===lines.length-1&&PUP_ONCE[k]?'y':'w'));
+    const y=104+lines.length*10;
+    txt('LASTS '+pupDur(k).toFixed(1)+'S','c',y,.5,'l');
+    if(lv<5)txt('NEXT LEVEL '+(d.t*(1+.15*(lv+1))).toFixed(1)+'S','c',y+7,.5,'G');
+    btn('GOT IT',36,166,72,22,()=>{shopInfo=null;snd(660,440,.06)},{kind:'alt'});
+  }
 }
+// what each power-up does (shown when you tap it in the shop); shield and rope work once while they last
+const PUP_ONCE={shield:1,rope:1};
+const PUP_INFO={
+  shield:['BLOCKS ONE HIT.','NO STUN, AND THE','LAVA STAYS DOWN.','WORKS ONCE'],
+  rope:['FALL OFF A VINE','END AND IT PULLS','YOU BACK UP ONTO','A SAFE VINE.','WORKS ONCE'],
+  magnet:['PULLS IN GEMS','FROM ALL THREE','VINES.'],
+  x2:['EVERY GEM YOU','GRAB SCORES','DOUBLE.'],
+  cool:['GET HIT AND THE','LAVA STAYS DOWN','INSTEAD OF','SURGING UP.']};
+let shopInfo=null;
 
 function drawHud(){
   btns=[];
@@ -1563,7 +1751,7 @@ function drawHud(){
   const m=height();
   txt(score(),16,7,1.5,'w');txt(m+'M',16,20,1,'l');
   if(combo>1&&T-comboT<3)txt('X'+combo,16+tw(''+score(),1.5)+4,10,1,'y');
-  const hi='HI '+best;txt(hi,128-tw(hi,.5),state==='play'?21:9,.5,'y');
+  const hi='HI '+best;txt(hi,state==='play'?114-tw(hi,.5):128-tw(hi,.5),state==='play'?10:9,.5,'y');
   if(gemCount>0){gemTxt(gemCount,16,31,1,'y');
     // chain multiplier, blinking when it's about to run out
     const cm=chainMult();if(cm>1&&state==='play'&&(T-lastGemT<1.2||(T*10|0)%2))txt('X'+cm,24+tw(''+gemCount,1)+4,31,1,'o')}
@@ -1572,20 +1760,21 @@ function drawHud(){
   if(state==='play'){
     const gap=p.y-lavaY,hgt=Math.max(0,Math.min(1,gap/110))*80;
     f(4,40,4,80,'n');f(5,122,2,1,'o');f(4,123,4,3,'o');f(5,124,2,2,'y');f(3,124,1,1,'r');f(8,124,1,1,'r');f(4,120-hgt,4,hgt,gap<40?((T*8|0)%2?'r':'o'):'G');
-    if(playT<2.5&&!paused&&(T*3|0)%2===0)txt('SWIPE < >','c',110,1,'w');
+    if(firstRun&&playT<2.5&&!paused&&(T*3|0)%2===0)txt('SWIPE < >','c',110,1,'w'); // first run ever only
     // one row for whatever is running: icon over a draining bar, blinking for its last 2 seconds
     {let hx=21;for(const k of PUP_KINDS)if(pT[k]>0){
       if(pT[k]>2||(T*8|0)%2)drawIcon(k,hx,48);
       f(hx-5.5,55,11,2.5,'k');f(hx-5,55.5,10*Math.min(1,pT[k]/pMax[k]),1.5,PUPS[k].c);hx+=13}}
     if(hintT>0&&!paused){txt('LAVA IS CLOSE!','c',222,1,'y');if((T*4|0)%2===0)txt('DO NOT GET HIT AGAIN!','c',233,1,'w')}
-    if(!paused){for(const x of [122,126]){f(x+.5,8.5,2,7,'k');f(x,8,2,7,'w')}btns.push({x:106,y:0,w:38,h:34,fn:pause})} // thumb-sized hit area
+    if(!paused){btns.push({x:106,y:0,w:38,h:34,fn:pause}); // thumb-sized hit area
+      btn('',119,4,19,19,pause,{kind:'pink',round:true,still:true,icon:icoPause})}
     else if(resumeT>0)heading(Math.ceil(resumeT/.7),96,3,'y','w','#8a4f00');
     else{
       dim();panel(20,60,104,108);
       heading('PAUSED',70,1.5,'o','y','#8a2a00');
       if((performance.now()/500|0)%2===0)txt('TAP TO RESUME','c',92,1,'w');
       btn('SOUND: '+(muted?'OFF':'ON'),32,108,80,22,()=>setMute(!muted),{kind:muted?'off':'alt'});
-      btn('QUIT',32,135,80,22,quit,{kind:'off'});
+      btn('QUIT',32,135,80,22,quit,{kind:'red'});
     }
   }
   if(state==='dead'){
@@ -1600,7 +1789,7 @@ function drawHud(){
     const ok=deadT>.8,rv=canRevive();let y=rv?131:140;
     if(rv){btn('REVIVE',24,y,96,26,ok&&revive,{kind:'gold',sub:save.boost.revive>0?save.boost.revive+' IN STOCK':BOOSTS.revive.cost+' GEMS'});y+=29}
     btn('RETRY',24,y,96,26,ok&&play,{kind:'go',sc:1.5});if(ok){arrow(19,y+9,1);arrow(125,y+9,-1)}y+=29;
-    btn('SHOP',24,y,47,20,ok&&openShop,{kind:rv?'alt':'gold'});btn('HOME',73,y,47,20,ok&&(()=>{reset();state='title'}));
+    btn('SHOP',24,y,47,20,ok&&(()=>openShop('up')),{kind:rv?'alt':'gold'});btn('HOME',73,y,47,20,ok&&(()=>{reset();state='title'}),{kind:'pink'});
   }
 }
 
@@ -1642,7 +1831,8 @@ addEventListener('keydown',e=>{
   unlock();
   if(e.key==='ArrowLeft'||e.key==='a')move(-1);
   else if(e.key==='ArrowRight'||e.key==='d')move(1);
-  else if(e.key==='Escape'&&state==='shop')closeShop();
+  else if(e.key==='Escape'&&state==='shop'){if(shopInfo)shopInfo=null;else closeShop()}
+  else if(e.key==='Escape'&&state==='title')settingsOpen=false;
   else if(e.key==='p'||e.key==='Escape'){if(paused)resume();else pause()}
   else if(e.key==='m')setMute(!muted);
   else if(e.key===' '||e.key==='Enter'){tap();e.preventDefault()}
